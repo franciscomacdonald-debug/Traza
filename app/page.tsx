@@ -1,6 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 import styles from "./page.module.css";
 
 type Metric = {
@@ -34,14 +37,88 @@ const nav = [
 ];
 
 export default function Home() {
+  const router = useRouter();
   const [project, setProject] = useState("Cuncumén Etapa 3");
   const [area, setArea] = useState("Medio Ambiente");
   const [active, setActive] = useState("Dashboard");
+  const [user, setUser] = useState<User | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    if (!supabase) {
+      setCheckingSession(false);
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session) {
+        router.replace("/login");
+        return;
+      }
+      setUser(data.session.user);
+      setCheckingSession(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+      setUser(session.user);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [router]);
 
   const statusText = useMemo(
     () => "3 hallazgos abiertos · 2 obligaciones próximas · 1 permiso próximo a vencer",
     []
   );
+
+  async function handleLogout() {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
+
+  if (checkingSession) {
+    return (
+      <main style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        background: "#f4f7fb",
+        color: "#102a43",
+        fontFamily: "Arial, Helvetica, sans-serif"
+      }}>
+        Verificando sesión de TRAZA...
+      </main>
+    );
+  }
+
+  if (!supabase) {
+    return (
+      <main style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        padding: 24,
+        background: "#f4f7fb",
+        color: "#102a43",
+        fontFamily: "Arial, Helvetica, sans-serif"
+      }}>
+        Falta configurar la conexión con Supabase.
+      </main>
+    );
+  }
+
+  const userLabel =
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.name ||
+    user?.email ||
+    "Usuario TRAZA";
 
   return (
     <main className={styles.shell}>
@@ -79,12 +156,27 @@ export default function Home() {
             <span className={styles.eyebrow}>Proyecto activo</span>
             <h1>{active}</h1>
           </div>
+
           <div className={styles.userBox}>
             <button className={styles.bell}>🔔</button>
             <div>
-              <strong>Usuario TRAZA</strong>
-              <span>Identidad laboral</span>
+              <strong>{userLabel}</strong>
+              <span>{user?.email ?? "Cuenta autenticada"}</span>
             </div>
+            <button
+              onClick={handleLogout}
+              style={{
+                border: "1px solid #d9e2ec",
+                background: "white",
+                color: "#486581",
+                padding: "9px 12px",
+                borderRadius: 10,
+                cursor: "pointer",
+                fontWeight: 700,
+              }}
+            >
+              Salir
+            </button>
           </div>
         </header>
 
@@ -168,7 +260,7 @@ export default function Home() {
         </section>
 
         <footer className={styles.note}>
-         TRAZA v1 — Plataforma de gestión y trazabilidad.
+          TRAZA v1 — Plataforma de gestión y trazabilidad.
         </footer>
       </section>
     </main>

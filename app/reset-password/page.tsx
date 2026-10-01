@@ -15,7 +15,9 @@ export default function ResetPasswordPage() {
   const [message, setMessage] = useState("Verificando enlace de recuperación...");
 
   useEffect(() => {
-    if (!supabase) {
+    const client = supabase;
+
+    if (!client) {
       setMessage("Falta configurar la conexión con Supabase.");
       return;
     }
@@ -23,7 +25,7 @@ export default function ResetPasswordPage() {
     let mounted = true;
 
     async function checkSession() {
-      const { data, error } = await supabase.auth.getSession();
+      const { data, error } = await client.auth.getSession();
 
       if (!mounted) return;
 
@@ -47,7 +49,7 @@ export default function ResetPasswordPage() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    } = client.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
 
       if (event === "PASSWORD_RECOVERY" || session) {
@@ -66,7 +68,9 @@ export default function ResetPasswordPage() {
     event.preventDefault();
     setMessage("");
 
-    if (!supabase) {
+    const client = supabase;
+
+    if (!client) {
       setMessage("Falta configurar la conexión con Supabase.");
       return;
     }
@@ -83,7 +87,7 @@ export default function ResetPasswordPage() {
 
     setLoading(true);
 
-    const { error } = await supabase.auth.updateUser({
+    const { error } = await client.auth.updateUser({
       password,
     });
 
@@ -99,9 +103,12 @@ export default function ResetPasswordPage() {
   }
 
   async function goToLogin() {
-    if (supabase) {
-      await supabase.auth.signOut();
+    const client = supabase;
+
+    if (client) {
+      await client.auth.signOut();
     }
+
     router.replace("/login");
   }
 
@@ -166,9 +173,7 @@ export default function ResetPasswordPage() {
           <div className={styles.successBox}>
             <div className={styles.successIcon}>✓</div>
             <h1>Contraseña actualizada</h1>
-            <p>
-              Tu nueva contraseña quedó guardada correctamente.
-            </p>
+            <p>Tu nueva contraseña quedó guardada correctamente.</p>
             <button onClick={goToLogin}>Volver a iniciar sesión</button>
           </div>
         )}

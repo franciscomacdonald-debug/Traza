@@ -15,12 +15,12 @@ export default function ResetPasswordPage() {
   const [message, setMessage] = useState("Verificando enlace de recuperación...");
 
   useEffect(() => {
-    const client = supabase;
-
-    if (!client) {
+    if (!supabase) {
       setMessage("Falta configurar la conexión con Supabase.");
       return;
     }
+
+    const client = supabase!;
 
     let mounted = true;
 
@@ -68,12 +68,12 @@ export default function ResetPasswordPage() {
     event.preventDefault();
     setMessage("");
 
-    const client = supabase;
-
-    if (!client) {
+    if (!supabase) {
       setMessage("Falta configurar la conexión con Supabase.");
       return;
     }
+
+    const client = supabase!;
 
     if (password.length < 8) {
       setMessage("La nueva contraseña debe tener al menos 8 caracteres.");
@@ -103,10 +103,8 @@ export default function ResetPasswordPage() {
   }
 
   async function goToLogin() {
-    const client = supabase;
-
-    if (client) {
-      await client.auth.signOut();
+    if (supabase) {
+      await supabase.auth.signOut();
     }
 
     router.replace("/login");

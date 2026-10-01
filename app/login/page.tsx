@@ -10,18 +10,24 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [message, setMessage] = useState("");
+  const [info, setInfo] = useState("");
 
   useEffect(() => {
     if (!supabase) return;
+
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) router.replace("/");
+      if (data.session) {
+        router.replace("/");
+      }
     });
   }, [router]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
+    setInfo("");
 
     if (!supabase) {
       setMessage("Falta configurar la conexión con Supabase.");
@@ -49,6 +55,38 @@ export default function LoginPage() {
 
     router.replace("/");
     router.refresh();
+  }
+
+  async function handleRecovery() {
+    setMessage("");
+    setInfo("");
+
+    if (!supabase) {
+      setMessage("Falta configurar la conexión con Supabase.");
+      return;
+    }
+
+    if (!email.trim()) {
+      setMessage("Escribe primero tu correo electrónico.");
+      return;
+    }
+
+    setRecovering(true);
+
+    const redirectTo = `${window.location.origin}/reset-password`;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo,
+    });
+
+    setRecovering(false);
+
+    if (error) {
+      setMessage("No fue posible enviar el correo de recuperación.");
+      return;
+    }
+
+    setInfo("Te enviamos un correo para crear una nueva contraseña.");
   }
 
   return (
@@ -113,9 +151,34 @@ export default function LoginPage() {
             </label>
 
             {message && <div className={styles.message}>{message}</div>}
+            {info && (
+              <div style={{
+                border: "1px solid #cfe8d6",
+                background: "#f3fbf5",
+                color: "#2f6b3a",
+                borderRadius: 10,
+                padding: "11px 12px",
+                fontSize: 13
+              }}>
+                {info}
+              </div>
+            )}
 
             <button type="submit" disabled={loading}>
               {loading ? "Ingresando..." : "Ingresar a TRAZA"}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleRecovery}
+              disabled={recovering}
+              style={{
+                background: "white",
+                color: "#1f6feb",
+                border: "1px solid #d7e1eb"
+              }}
+            >
+              {recovering ? "Enviando..." : "¿Olvidaste tu contraseña?"}
             </button>
           </form>
 

@@ -13,6 +13,52 @@ type Metric = {
   tone: "blue" | "green" | "amber" | "red" | "gray";
 };
 
+type Profile = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+};
+
+type WorkIdentity = {
+  id: string;
+  corporate_email: string;
+  job_title: string | null;
+  status: "pending" | "verified" | "inactive" | "rejected";
+  verified_at: string | null;
+  valid_from: string;
+  valid_until: string | null;
+};
+
+type ProjectMember = {
+  project_id: string;
+  role:
+    | "if_admin"
+    | "aif_environmental"
+    | "contractor_environmental"
+    | "environmental_manager"
+    | "viewer";
+  job_title: string | null;
+  status: "invited" | "active" | "temporarily_inactive" | "ended";
+  valid_from: string;
+  valid_until: string | null;
+  work_identity_id: string | null;
+};
+
+type Project = {
+  id: string;
+  name: string;
+  project_code: string | null;
+  status: "draft" | "active" | "finished" | "archived";
+  start_date: string | null;
+  expected_end_date: string | null;
+};
+
+type ProjectAccess = Project & {
+  membership: ProjectMember;
+};
+
 const metrics: Metric[] = [
   { title: "Alertas", value: "6", detail: "2 críticas", tone: "red" },
   { title: "Hallazgos", value: "3", detail: "2 en gestión", tone: "amber" },
@@ -36,46 +82,188 @@ const nav = [
   ["Configuración", "⚙"],
 ];
 
+const roleLabels: Record<ProjectMember["role"], string> = {
+  if_admin: "Administrador IF",
+  aif_environmental: "AIF Medio Ambiente",
+  contractor_environmental: "Contratista Medio Ambiente",
+  environmental_manager: "Encargado Ambiental",
+  viewer: "Consulta",
+};
+
 export default function Home() {
   const router = useRouter();
-  const [project, setProject] = useState("Cuncumén Etapa 3");
-  const [area, setArea] = useState("Medio Ambiente");
+
   const [active, setActive] = useState("Dashboard");
+  const [area, setArea] = useState("Medio Ambiente");
+
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [workIdentity, setWorkIdentity] = useState<WorkIdentity | null>(null);
+  const [projects, setProjects] = useState<ProjectAccess[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+
   const [checkingSession, setCheckingSession] = useState(true);
+  const [loadingData, setLoadingData] = useState(true);
+  const [dataError, setDataError] = useState("");
 
   useEffect(() => {
     if (!supabase) {
       setCheckingSession(false);
+      setLoadingData(false);
       return;
     }
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
+    const client = supabase!;
+
+    async function initialize() {
+      const { data: sessionData } = await client.auth.getSession();
+
+      if (!sessionData.session) {
         router.replace("/login");
         return;
       }
-      setUser(data.session.user);
+
+      const currentUser = sessionData.session.user;
+      setUser(currentUser);
       setCheckingSession(false);
-    });
+
+      const [
+        { data: profileData, error: profileError },
+        { data: identitiesData, error: identitiesError },
+        { data: membershipsData, error: membershipsError },
+      ] = await Promise.all([
+        client
+          .from("profiles")
+          .select("id, first_name, last_name, display_name, avatar_url")
+          .eq("id", currentUser.id)
+          .maybeSingle(),
+
+        client
+          .from("work_identities")
+          .select(
+            "id, corporate_email, job_title, status, verified_at, valid_from, valid_until"
+          )
+          .eq("user_id", currentUser.id)
+          .order("verified_at", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false }),
+
+        client
+          .from("project_members")
+          .select(
+            "project_id, role, job_title, status, valid_from, valid_until, work_identity_id"
+          )
+          .eq("user_id", currentUser.id)
+          .in("status", ["active", "temporarily_inactive"])
+          .order("valid_from", { ascending: false }),
+      ]);
+
+      if (profileError || identitiesError || membershipsError) {
+        setDataError(
+          profileError?.message ||
+            identitiesError?.message ||
+            membershipsError?.message ||
+            "No fue posible cargar tus datos de TRAZA."
+        );
+        setLoadingData(false);
+        return;
+      }
+
+      setProfile((profileData as Profile | null) ?? null);
+
+      const identities = (identitiesData ?? []) as WorkIdentity[];
+      const verifiedIdentity =
+        identities.find((identity) => identity.status === "verified") ??
+        identities[0] ??
+        null;
+      setWorkIdentity(verifiedIdentity);
+
+      const memberships = (membershipsData ?? []) as ProjectMember[];
+
+      if (memberships.length === 0) {
+        setProjects([]);
+        setSelectedProjectId("");
+        setLoadingData(false);
+        return;
+      }
+
+      const projectIds = [...new Set(memberships.map((item) => item.project_id))];
+
+      const { data: projectsData, error: projectsError } = await client
+        .from("projects")
+        .select(
+          "id, name, project_code, status, start_date, expected_end_date"
+        )
+        .in("id", projectIds)
+        .order("name", { ascending: true });
+
+      if (projectsError) {
+        setDataError(projectsError.message);
+        setLoadingData(false);
+        return;
+      }
+
+      const projectRows = (projectsData ?? []) as Project[];
+
+      const accessRows: ProjectAccess[] = projectRows.map((project) => {
+        const membership =
+          memberships.find(
+            (membership) =>
+              membership.project_id === project.id &&
+              membership.status === "active"
+          ) ??
+          memberships.find(
+            (membership) => membership.project_id === project.id
+          )!;
+
+        return {
+          ...project,
+          membership,
+        };
+      });
+
+      setProjects(accessRows);
+      setSelectedProjectId(accessRows[0]?.id ?? "");
+      setLoadingData(false);
+    }
+
+    initialize();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = client.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         router.replace("/login");
-        return;
+      } else {
+        setUser(session.user);
       }
-      setUser(session.user);
     });
 
     return () => subscription.unsubscribe();
   }, [router]);
 
   const statusText = useMemo(
-    () => "3 hallazgos abiertos · 2 obligaciones próximas · 1 permiso próximo a vencer",
+    () =>
+      "3 hallazgos abiertos · 2 obligaciones próximas · 1 permiso próximo a vencer",
     []
   );
+
+  const selectedProject =
+    projects.find((project) => project.id === selectedProjectId) ?? null;
+
+  const userLabel =
+    profile?.display_name ||
+    [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") ||
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.name ||
+    user?.email ||
+    "Usuario TRAZA";
+
+  const workLabel =
+    selectedProject?.membership.job_title ||
+    workIdentity?.job_title ||
+    (selectedProject
+      ? roleLabels[selectedProject.membership.role]
+      : "Sin proyecto activo");
 
   async function handleLogout() {
     if (!supabase) return;
@@ -83,42 +271,40 @@ export default function Home() {
     router.replace("/login");
   }
 
-  if (checkingSession) {
+  if (checkingSession || loadingData) {
     return (
-      <main style={{
-        minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
-        background: "#f4f7fb",
-        color: "#102a43",
-        fontFamily: "Arial, Helvetica, sans-serif"
-      }}>
-        Verificando sesión de TRAZA...
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          background: "#f4f7fb",
+          color: "#102a43",
+          fontFamily: "Arial, Helvetica, sans-serif",
+        }}
+      >
+        Cargando TRAZA...
       </main>
     );
   }
 
   if (!supabase) {
     return (
-      <main style={{
-        minHeight: "100vh",
-        display: "grid",
-        placeItems: "center",
-        padding: 24,
-        background: "#f4f7fb",
-        color: "#102a43",
-        fontFamily: "Arial, Helvetica, sans-serif"
-      }}>
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          padding: 24,
+          background: "#f4f7fb",
+          color: "#102a43",
+          fontFamily: "Arial, Helvetica, sans-serif",
+        }}
+      >
         Falta configurar la conexión con Supabase.
       </main>
     );
   }
-
-  const userLabel =
-    user?.user_metadata?.full_name ||
-    user?.user_metadata?.name ||
-    user?.email ||
-    "Usuario TRAZA";
 
   return (
     <main className={styles.shell}>
@@ -135,7 +321,9 @@ export default function Home() {
           {nav.map(([label, icon]) => (
             <button
               key={label}
-              className={`${styles.navItem} ${active === label ? styles.navActive : ""}`}
+              className={`${styles.navItem} ${
+                active === label ? styles.navActive : ""
+              }`}
               onClick={() => setActive(label)}
             >
               <span>{icon}</span>
@@ -161,7 +349,7 @@ export default function Home() {
             <button className={styles.bell}>🔔</button>
             <div>
               <strong>{userLabel}</strong>
-              <span>{user?.email ?? "Cuenta autenticada"}</span>
+              <span>{workLabel}</span>
             </div>
             <button
               onClick={handleLogout}
@@ -180,12 +368,40 @@ export default function Home() {
           </div>
         </header>
 
+        {dataError && (
+          <section
+            style={{
+              background: "#fff5f5",
+              border: "1px solid #ffd2d2",
+              color: "#b42318",
+              borderRadius: 12,
+              padding: 14,
+              marginBottom: 18,
+            }}
+          >
+            No fue posible cargar tus datos: {dataError}
+          </section>
+        )}
+
         <section className={styles.filters}>
           <label>
             Proyecto
-            <select value={project} onChange={(e) => setProject(e.target.value)}>
-              <option>Cuncumén Etapa 3</option>
-              <option>Proyecto de demostración</option>
+            <select
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              disabled={projects.length === 0}
+            >
+              {projects.length === 0 ? (
+                <option value="">Sin proyectos asignados</option>
+              ) : (
+                projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.project_code
+                      ? `${project.project_code} — ${project.name}`
+                      : project.name}
+                  </option>
+                ))
+              )}
             </select>
           </label>
 
@@ -201,9 +417,46 @@ export default function Home() {
           </label>
         </section>
 
+        {selectedProject && (
+          <section
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              marginBottom: 18,
+              color: "#627d98",
+              fontSize: 13,
+            }}
+          >
+            <span>
+              Estado proyecto: <strong>{selectedProject.status}</strong>
+            </span>
+            <span>·</span>
+            <span>
+              Rol:{" "}
+              <strong>{roleLabels[selectedProject.membership.role]}</strong>
+            </span>
+            <span>·</span>
+            <span>
+              Membresía:{" "}
+              <strong>{selectedProject.membership.status}</strong>
+            </span>
+            {workIdentity && (
+              <>
+                <span>·</span>
+                <span>
+                  Identidad laboral: <strong>{workIdentity.status}</strong>
+                </span>
+              </>
+            )}
+          </section>
+        )}
+
         <section className={styles.statusPanel}>
           <div>
-            <span className={styles.statusLabel}>Estado ambiental del proyecto</span>
+            <span className={styles.statusLabel}>
+              Estado ambiental del proyecto
+            </span>
             <div className={styles.statusTitle}>
               <span className={styles.statusDot} />
               ATENCIÓN
@@ -235,10 +488,38 @@ export default function Home() {
             </div>
 
             <div className={styles.activity}>
-              <div><span className={styles.ok}>✓</span><p><strong>Inspección ambiental completada</strong><small>Registro actualizado</small></p><time>Hoy</time></div>
-              <div><span className={styles.warn}>!</span><p><strong>Hallazgo N°024 actualizado</strong><small>En gestión por contratista</small></p><time>Hoy</time></div>
-              <div><span className={styles.info}>↗</span><p><strong>Evidencia incorporada</strong><small>Fotografía asociada a inspección</small></p><time>Ayer</time></div>
-              <div><span className={styles.warn}>!</span><p><strong>Permiso próximo a vencer</strong><small>Revisión requerida</small></p><time>2 días</time></div>
+              <div>
+                <span className={styles.ok}>✓</span>
+                <p>
+                  <strong>Inspección ambiental completada</strong>
+                  <small>Registro actualizado</small>
+                </p>
+                <time>Hoy</time>
+              </div>
+              <div>
+                <span className={styles.warn}>!</span>
+                <p>
+                  <strong>Hallazgo N°024 actualizado</strong>
+                  <small>En gestión por contratista</small>
+                </p>
+                <time>Hoy</time>
+              </div>
+              <div>
+                <span className={styles.info}>↗</span>
+                <p>
+                  <strong>Evidencia incorporada</strong>
+                  <small>Fotografía asociada a inspección</small>
+                </p>
+                <time>Ayer</time>
+              </div>
+              <div>
+                <span className={styles.warn}>!</span>
+                <p>
+                  <strong>Permiso próximo a vencer</strong>
+                  <small>Revisión requerida</small>
+                </p>
+                <time>2 días</time>
+              </div>
             </div>
           </article>
 
@@ -253,14 +534,18 @@ export default function Home() {
             <div className={styles.closureBox}>
               <span>Septiembre 2026</span>
               <strong>En revisión</strong>
-              <div className={styles.progress}><i /></div>
-              <small>La información mostrada en esta versión es de demostración.</small>
+              <div className={styles.progress}>
+                <i />
+              </div>
+              <small>
+                Los indicadores ambientales todavía son datos de demostración.
+              </small>
             </div>
           </article>
         </section>
 
         <footer className={styles.note}>
-          TRAZA v1 — Plataforma de gestión y trazabilidad.
+          TRAZA v1 — Usuario, identidad laboral y proyectos conectados a Supabase.
         </footer>
       </section>
     </main>

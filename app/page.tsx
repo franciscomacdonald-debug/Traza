@@ -168,7 +168,7 @@ export default function Home() {
         </section>
 
         <footer className={styles.note}>
-          Interfaz inicial de TRAZA v1. La conexión con Supabase se realizará progresivamente sin modificar el backend auditado.
+         TRAZA v1 — Plataforma de gestión y trazabilidad.
         </footer>
       </section>
     </main>

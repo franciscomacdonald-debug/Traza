@@ -99,14 +99,6 @@ export default function IntegrantesProyectoPage() {
     setMembers((membersData ?? []) as MemberRow[]);
     setCandidates((candidatesData ?? []) as CandidateRow[]);
     setLoading(false);
-      return;
-    }
-
-    setMembers((membersData ?? []) as MemberRow[]);
-    setIdentities((identitiesData ?? []) as IdentityRow[]);
-    setProfiles((profilesData ?? []) as ProfileRow[]);
-    setOrganizations((organizationsData ?? []) as OrganizationRow[]);
-    setLoading(false);
   }
 
   useEffect(() => {

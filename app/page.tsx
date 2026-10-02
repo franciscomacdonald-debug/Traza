@@ -324,7 +324,13 @@ export default function Home() {
               className={`${styles.navItem} ${
                 active === label ? styles.navActive : ""
               }`}
-              onClick={() => setActive(label)}
+              onClick={() => {
+                if (label === "Configuración") {
+                  router.push("/configuracion");
+                  return;
+                }
+                setActive(label);
+              }}
             >
               <span>{icon}</span>
               {label}

@@ -59,7 +59,7 @@ type ProjectAccess = Project & {
   membership: ProjectMember;
 };
 
-const metrics: Metric[] = [
+const baseMetrics: Metric[] = [
   { title: "Alertas", value: "6", detail: "2 críticas", tone: "red" },
   { title: "Hallazgos", value: "3", detail: "2 en gestión", tone: "amber" },
   { title: "Inspecciones", value: "12", detail: "este mes", tone: "blue" },
@@ -101,6 +101,8 @@ export default function Home() {
   const [workIdentity, setWorkIdentity] = useState<WorkIdentity | null>(null);
   const [projects, setProjects] = useState<ProjectAccess[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [unreadAlertCount, setUnreadAlertCount] = useState(0);
+  const [criticalAlertCount, setCriticalAlertCount] = useState(0);
 
   const [checkingSession, setCheckingSession] = useState(true);
   const [loadingData, setLoadingData] = useState(true);
@@ -241,10 +243,72 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, [router]);
 
+  useEffect(() => {
+    if (!supabase || !selectedProjectId) {
+      setUnreadAlertCount(0);
+      setCriticalAlertCount(0);
+      return;
+    }
+
+    const client = supabase!;
+    let cancelled = false;
+
+    async function loadRealAlerts() {
+      const [
+        { data: unreadData, error: unreadError },
+        { count: criticalCount, error: criticalError },
+      ] = await Promise.all([
+        client.rpc("get_unread_alert_count", {
+          p_project_id: selectedProjectId,
+        }),
+        client
+          .from("project_alerts")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", selectedProjectId)
+          .eq("status", "unread")
+          .eq("priority", "critical"),
+      ]);
+
+      if (cancelled) return;
+
+      if (unreadError || criticalError) {
+        setDataError(
+          unreadError?.message ||
+            criticalError?.message ||
+            "No fue posible cargar las alertas reales."
+        );
+        return;
+      }
+
+      setUnreadAlertCount(Number(unreadData ?? 0));
+      setCriticalAlertCount(criticalCount ?? 0);
+    }
+
+    loadRealAlerts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProjectId]);
+
+  const dashboardMetrics = useMemo(
+    () =>
+      baseMetrics.map((metric) =>
+        metric.title === "Alertas"
+          ? {
+              ...metric,
+              value: String(unreadAlertCount),
+              detail: `${criticalAlertCount} críticas`,
+            }
+          : metric
+      ),
+    [unreadAlertCount, criticalAlertCount]
+  );
+
   const statusText = useMemo(
     () =>
-      "3 hallazgos abiertos · 2 obligaciones próximas · 1 permiso próximo a vencer",
-    []
+      `${unreadAlertCount} alertas no leídas · ${criticalAlertCount} críticas · resto de indicadores aún en integración`,
+    [unreadAlertCount, criticalAlertCount]
   );
 
   const selectedProject =
@@ -352,7 +416,9 @@ export default function Home() {
           </div>
 
           <div className={styles.userBox}>
-            <button className={styles.bell}>🔔</button>
+            <button className={styles.bell} title="Alertas no leídas">
+              🔔{unreadAlertCount > 0 ? ` ${unreadAlertCount}` : ""}
+            </button>
             <div>
               <strong>{userLabel}</strong>
               <span>{workLabel}</span>
@@ -473,7 +539,7 @@ export default function Home() {
         </section>
 
         <section className={styles.metrics}>
-          {metrics.map((metric) => (
+          {dashboardMetrics.map((metric) => (
             <article key={metric.title} className={styles.metricCard}>
               <div className={`${styles.tone} ${styles[metric.tone]}`} />
               <span>{metric.title}</span>

@@ -18,27 +18,14 @@ type MemberRow = {
   designation_reason: string | null;
 };
 
-type ProfileRow = {
-  id: string;
-  display_name: string | null;
-  first_name: string | null;
-  last_name: string | null;
-};
-
-type IdentityRow = {
-  id: string;
+type CandidateRow = {
+  work_identity_id: string;
   user_id: string;
-  organization_id: string;
+  display_name: string;
   corporate_email: string;
   job_title: string | null;
-  status: string;
-  valid_from: string;
-  valid_until: string | null;
-};
-
-type OrganizationRow = {
-  id: string;
-  name: string;
+  organization_id: string;
+  organization_name: string;
 };
 
 const roleOptions = [
@@ -59,9 +46,7 @@ export default function IntegrantesProyectoPage() {
   const [success, setSuccess] = useState("");
 
   const [members, setMembers] = useState<MemberRow[]>([]);
-  const [profiles, setProfiles] = useState<ProfileRow[]>([]);
-  const [identities, setIdentities] = useState<IdentityRow[]>([]);
-  const [organizations, setOrganizations] = useState<OrganizationRow[]>([]);
+  const [candidates, setCandidates] = useState<CandidateRow[]>([]);
 
   const [userId, setUserId] = useState("");
   const [identityId, setIdentityId] = useState("");
@@ -88,9 +73,7 @@ export default function IntegrantesProyectoPage() {
 
     const [
       { data: membersData, error: membersError },
-      { data: identitiesData, error: identitiesError },
-      { data: profilesData, error: profilesError },
-      { data: organizationsData, error: organizationsError },
+      { data: candidatesData, error: candidatesError },
     ] = await Promise.all([
       client
         .from("project_members")
@@ -98,32 +81,24 @@ export default function IntegrantesProyectoPage() {
         .eq("project_id", projectId)
         .order("valid_from", { ascending: false }),
 
-      client
-        .from("work_identities")
-        .select("id, user_id, organization_id, corporate_email, job_title, status, valid_from, valid_until")
-        .eq("status", "verified")
-        .order("created_at", { ascending: false }),
-
-      client
-        .from("profiles")
-        .select("id, display_name, first_name, last_name"),
-
-      client
-        .from("organizations")
-        .select("id, name")
-        .eq("active", true)
-        .order("name", { ascending: true }),
+      client.rpc("get_project_member_candidates", {
+        p_project_id: projectId,
+      }),
     ]);
 
-    if (membersError || identitiesError || profilesError || organizationsError) {
+    if (membersError || candidatesError) {
       setMessage(
         membersError?.message ||
-        identitiesError?.message ||
-        profilesError?.message ||
-        organizationsError?.message ||
-        "No fue posible cargar integrantes."
+          candidatesError?.message ||
+          "No fue posible cargar integrantes."
       );
       setLoading(false);
+      return;
+    }
+
+    setMembers((membersData ?? []) as MemberRow[]);
+    setCandidates((candidatesData ?? []) as CandidateRow[]);
+    setLoading(false);
       return;
     }
 
@@ -138,23 +113,26 @@ export default function IntegrantesProyectoPage() {
     loadData();
   }, [projectId]);
 
+  function getCandidateByUserId(id: string) {
+    return candidates.find((candidate) => candidate.user_id === id);
+  }
+
   function getProfileName(id: string) {
-    const p = profiles.find((x) => x.id === id);
-    if (!p) return id;
-    return (
-      p.display_name ||
-      [p.first_name, p.last_name].filter(Boolean).join(" ") ||
-      id
-    );
+    return getCandidateByUserId(id)?.display_name ?? id;
   }
 
   function getOrganizationName(id: string) {
-    return organizations.find((o) => o.id === id)?.name ?? id;
+    return (
+      candidates.find((candidate) => candidate.organization_id === id)
+        ?.organization_name ?? id
+    );
   }
 
   function selectIdentity(id: string) {
     setIdentityId(id);
-    const identity = identities.find((x) => x.id === id);
+    const identity = candidates.find(
+      (candidate) => candidate.work_identity_id === id
+    );
 
     if (!identity) {
       setUserId("");
@@ -239,9 +217,13 @@ export default function IntegrantesProyectoPage() {
               Identidad laboral verificada
               <select value={identityId} onChange={(e) => selectIdentity(e.target.value)}>
                 <option value="">Seleccionar</option>
-                {identities.map((identity) => (
-                  <option key={identity.id} value={identity.id}>
-                    {identity.corporate_email} · {identity.job_title || "Sin cargo"}
+                {candidates.map((identity) => (
+                  <option
+                    key={identity.work_identity_id}
+                    value={identity.work_identity_id}
+                  >
+                    {identity.display_name} · {identity.corporate_email} ·{" "}
+                    {identity.organization_name}
                   </option>
                 ))}
               </select>

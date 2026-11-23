@@ -2,624 +2,120 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import styles from "./page.module.css";
+import styles from "./home.module.css";
 
-type Metric = {
-  title: string;
-  value: string;
-  detail: string;
-  tone: "blue" | "green" | "amber" | "red" | "gray";
-};
+const modules = [
+  { id: "ambiental", name: "Medio Ambiente", icon: "🌿", path: "/ambiental", desc: "Inspecciones y cumplimiento ambiental" },
+  { id: "avances", name: "Control de Avances", icon: "📈", path: "/avances", desc: "Programación, mediciones y visaciones" },
+  { id: "documental", name: "Gestión Documental", icon: "📁", path: "/documental", desc: "Archivos, versiones y aprobaciones" },
+  { id: "prevencion", name: "Prevención de Riesgos", icon: "🦺", path: "/prevencion", desc: "Seguridad, incidentes y medidas" },
+  { id: "calidad", name: "Control de Calidad", icon: "✅", path: "/calidad", desc: "Protocolos y no conformidades" },
+  { id: "topografia", name: "Topografía", icon: "📐", path: "/topografia", desc: "Cotas, replanteos y cubicaciones" },
+  { id: "laboratorio", name: "Laboratorio", icon: "🧪", path: "/laboratorio", desc: "Muestras, ensayos y resultados" },
+  { id: "comunidad", name: "Participación Ciudadana", icon: "👥", path: "/comunidad", desc: "Solicitudes y compromisos comunitarios" },
+] as const;
 
-type Profile = {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  display_name: string | null;
-  avatar_url: string | null;
-};
-
-type WorkIdentity = {
-  id: string;
-  corporate_email: string;
-  job_title: string | null;
-  status: "pending" | "verified" | "inactive" | "rejected";
-  verified_at: string | null;
-  valid_from: string;
-  valid_until: string | null;
-};
-
-type ProjectMember = {
-  project_id: string;
-  role:
-    | "if_admin"
-    | "aif_environmental"
-    | "contractor_environmental"
-    | "environmental_manager"
-    | "viewer";
-  job_title: string | null;
-  status: "invited" | "active" | "temporarily_inactive" | "ended";
-  valid_from: string;
-  valid_until: string | null;
-  work_identity_id: string | null;
-};
-
-type Project = {
-  id: string;
-  name: string;
-  project_code: string | null;
-  status: "draft" | "active" | "finished" | "archived";
-  start_date: string | null;
-  expected_end_date: string | null;
-};
-
-type ProjectAccess = Project & {
-  membership: ProjectMember;
-};
-
-const baseMetrics: Metric[] = [
-  { title: "Alertas", value: "6", detail: "2 críticas", tone: "red" },
-  { title: "Hallazgos", value: "3", detail: "2 en gestión", tone: "amber" },
-  { title: "Inspecciones", value: "12", detail: "este mes", tone: "blue" },
-  { title: "Obligaciones", value: "4", detail: "2 próximas", tone: "amber" },
-  { title: "Permisos", value: "8", detail: "1 próximo a vencer", tone: "amber" },
-  { title: "Cierre mensual", value: "Septiembre", detail: "En revisión", tone: "blue" },
-];
-
-const nav = [
-  ["Dashboard", "▣"],
-  ["Alertas", "⚠"],
-  ["Inspecciones", "▤"],
-  ["Hallazgos", "●"],
-  ["Requisitos", "✓"],
-  ["Obligaciones", "✓"],
-  ["Permisos", "▣"],
-  ["Residuos", "♻"],
-  ["Cierre mensual", "▤"],
-  ["Informes", "▤"],
-  ["Configuración", "⚙"],
-];
-
-const roleLabels: Record<ProjectMember["role"], string> = {
-  if_admin: "Administrador IF",
-  aif_environmental: "AIF Medio Ambiente",
-  contractor_environmental: "Contratista Medio Ambiente",
-  environmental_manager: "Encargado Ambiental",
-  viewer: "Consulta",
-};
+type Membership = { project_id: string; role: string; status: string; valid_from: string | null; valid_until: string | null };
+type Project = { id: string; name: string; project_code: string | null };
+type Permission = { project_id: string; module_id: string; access_level: string };
+type Activation = { project_id: string; module_id: string; enabled: boolean };
 
 export default function Home() {
   const router = useRouter();
-
-  const [active, setActive] = useState("Dashboard");
-  const [area, setArea] = useState("Medio Ambiente");
-
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [workIdentity, setWorkIdentity] = useState<WorkIdentity | null>(null);
-  const [projects, setProjects] = useState<ProjectAccess[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [unreadAlertCount, setUnreadAlertCount] = useState(0);
-  const [criticalAlertCount, setCriticalAlertCount] = useState(0);
-
-  const [checkingSession, setCheckingSession] = useState(true);
-  const [loadingData, setLoadingData] = useState(true);
-  const [dataError, setDataError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [email, setEmail] = useState("");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [selected, setSelected] = useState("");
+  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [activations, setActivations] = useState<Activation[]>([]);
+  const [permissionSetup, setPermissionSetup] = useState(false);
 
   useEffect(() => {
-    if (!supabase) {
-      setCheckingSession(false);
-      setLoadingData(false);
-      return;
-    }
-
-    const client = supabase!;
-
-    async function initialize() {
-      const { data: sessionData } = await client.auth.getSession();
-
-      if (!sessionData.session) {
-        router.replace("/login");
-        return;
-      }
-
-      const currentUser = sessionData.session.user;
-      setUser(currentUser);
-      setCheckingSession(false);
-
-      const [
-        { data: profileData, error: profileError },
-        { data: identitiesData, error: identitiesError },
-        { data: membershipsData, error: membershipsError },
-      ] = await Promise.all([
-        client
-          .from("profiles")
-          .select("id, first_name, last_name, display_name, avatar_url")
-          .eq("id", currentUser.id)
-          .maybeSingle(),
-
-        client
-          .from("work_identities")
-          .select(
-            "id, corporate_email, job_title, status, verified_at, valid_from, valid_until"
-          )
-          .eq("user_id", currentUser.id)
-          .order("verified_at", { ascending: false, nullsFirst: false })
-          .order("created_at", { ascending: false }),
-
-        client
-          .from("project_members")
-          .select(
-            "project_id, role, job_title, status, valid_from, valid_until, work_identity_id"
-          )
-          .eq("user_id", currentUser.id)
-          .in("status", ["active", "temporarily_inactive"])
-          .order("valid_from", { ascending: false }),
+    let alive = true;
+    const client = supabase;
+    if (!client) { setError("Faltan las variables de conexión de Supabase."); setLoading(false); return; }
+    const load = async () => {
+      const { data: auth, error: authError } = await client.auth.getUser();
+      if (!alive) return;
+      if (authError || !auth.user) { router.replace("/login"); return; }
+      setEmail(auth.user.email || "Usuario TRAZA");
+      const { data: members, error: memberError } = await client.from("project_members")
+        .select("project_id, role, status, valid_from, valid_until")
+        .eq("user_id", auth.user.id).eq("status", "active");
+      if (!alive) return;
+      if (memberError) { setError(memberError.message); setLoading(false); return; }
+      const today = new Date().toISOString().slice(0, 10);
+      const active = ((members || []) as Membership[]).filter(m => (!m.valid_from || m.valid_from <= today) && (!m.valid_until || m.valid_until >= today));
+      setMemberships(active);
+      if (active.length === 0) { setLoading(false); return; }
+      const ids = [...new Set(active.map(m => m.project_id))];
+      const { data: p, error: pError } = await client.from("projects").select("id, name, project_code").in("id", ids).order("name");
+      if (!alive) return;
+      if (pError) { setError(pError.message); setLoading(false); return; }
+      setProjects((p || []) as Project[]);
+      setSelected((p || [])[0]?.id || "");
+      // Migration is optional during the first deployment. Without it, legacy environmental
+      // members only receive their existing environmental access; new modules stay locked.
+      const [permResult, activationResult] = await Promise.all([
+        client.from("project_module_permissions").select("project_id, module_id, access_level").eq("user_id", auth.user.id).in("project_id", ids),
+        client.from("project_modules").select("project_id, module_id, enabled").in("project_id", ids),
       ]);
-
-      if (profileError || identitiesError || membershipsError) {
-        setDataError(
-          profileError?.message ||
-            identitiesError?.message ||
-            membershipsError?.message ||
-            "No fue posible cargar tus datos de TRAZA."
-        );
-        setLoadingData(false);
-        return;
+      if (!alive) return;
+      if (!permResult.error && !activationResult.error) {
+        setPermissionSetup(true);
+        setPermissions((permResult.data || []) as Permission[]);
+        setActivations((activationResult.data || []) as Activation[]);
       }
-
-      setProfile((profileData as Profile | null) ?? null);
-
-      const identities = (identitiesData ?? []) as WorkIdentity[];
-      const verifiedIdentity =
-        identities.find((identity) => identity.status === "verified") ??
-        identities[0] ??
-        null;
-      setWorkIdentity(verifiedIdentity);
-
-      const memberships = (membershipsData ?? []) as ProjectMember[];
-
-      if (memberships.length === 0) {
-        setProjects([]);
-        setSelectedProjectId("");
-        setLoadingData(false);
-        return;
-      }
-
-      const projectIds = [...new Set(memberships.map((item) => item.project_id))];
-
-      const { data: projectsData, error: projectsError } = await client
-        .from("projects")
-        .select(
-          "id, name, project_code, status, start_date, expected_end_date"
-        )
-        .in("id", projectIds)
-        .order("name", { ascending: true });
-
-      if (projectsError) {
-        setDataError(projectsError.message);
-        setLoadingData(false);
-        return;
-      }
-
-      const projectRows = (projectsData ?? []) as Project[];
-
-      const accessRows: ProjectAccess[] = projectRows.map((project) => {
-        const membership =
-          memberships.find(
-            (membership) =>
-              membership.project_id === project.id &&
-              membership.status === "active"
-          ) ??
-          memberships.find(
-            (membership) => membership.project_id === project.id
-          )!;
-
-        return {
-          ...project,
-          membership,
-        };
-      });
-
-      setProjects(accessRows);
-      setSelectedProjectId(accessRows[0]?.id ?? "");
-      setLoadingData(false);
-    }
-
-    initialize();
-
-    const {
-      data: { subscription },
-    } = client.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        router.replace("/login");
-      } else {
-        setUser(session.user);
-      }
+      setLoading(false);
+    };
+    void load();
+    const { data: { subscription } } = client.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") router.replace("/login");
     });
-
-    return () => subscription.unsubscribe();
+    return () => { alive = false; subscription.unsubscribe(); };
   }, [router]);
 
-  useEffect(() => {
-    if (!supabase || !selectedProjectId) {
-      setUnreadAlertCount(0);
-      setCriticalAlertCount(0);
-      return;
-    }
+  const membership = memberships.find(m => m.project_id === selected);
+  const available = useMemo(() => modules.map(m => {
+    const enabled = permissionSetup ? activations.some(a => a.project_id === selected && a.module_id === m.id && a.enabled) : m.id === "ambiental";
+    const granted = permissionSetup
+      ? permissions.some(p => p.project_id === selected && p.module_id === m.id && ["view", "edit", "approve", "admin"].includes(p.access_level))
+      : m.id === "ambiental" && !!membership;
+    // Only the existing environmental route is implemented in this phase.
+    return { ...m, enabled, granted, ready: m.id === "ambiental", accessible: enabled && granted && m.id === "ambiental" };
+  }), [activations, membership, permissionSetup, permissions, selected]);
 
-    const client = supabase!;
-    let cancelled = false;
-
-    async function loadRealAlerts() {
-      const [
-        { data: unreadData, error: unreadError },
-        { count: criticalCount, error: criticalError },
-      ] = await Promise.all([
-        client.rpc("get_unread_alert_count", {
-          p_project_id: selectedProjectId,
-        }),
-        client
-          .from("project_alerts")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", selectedProjectId)
-          .eq("status", "unread")
-          .eq("priority", "critical"),
-      ]);
-
-      if (cancelled) return;
-
-      if (unreadError || criticalError) {
-        setDataError(
-          unreadError?.message ||
-            criticalError?.message ||
-            "No fue posible cargar las alertas reales."
-        );
-        return;
-      }
-
-      setUnreadAlertCount(Number(unreadData ?? 0));
-      setCriticalAlertCount(criticalCount ?? 0);
-    }
-
-    loadRealAlerts();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedProjectId]);
-
-  const dashboardMetrics = useMemo(
-    () =>
-      baseMetrics.map((metric) =>
-        metric.title === "Alertas"
-          ? {
-              ...metric,
-              value: String(unreadAlertCount),
-              detail: `${criticalAlertCount} críticas`,
-            }
-          : metric
-      ),
-    [unreadAlertCount, criticalAlertCount]
-  );
-
-  const statusText = useMemo(
-    () =>
-      `${unreadAlertCount} alertas no leídas · ${criticalAlertCount} críticas · resto de indicadores aún en integración`,
-    [unreadAlertCount, criticalAlertCount]
-  );
-
-  const selectedProject =
-    projects.find((project) => project.id === selectedProjectId) ?? null;
-
-  const userLabel =
-    profile?.display_name ||
-    [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") ||
-    user?.user_metadata?.full_name ||
-    user?.user_metadata?.name ||
-    user?.email ||
-    "Usuario TRAZA";
-
-  const workLabel =
-    selectedProject?.membership.job_title ||
-    workIdentity?.job_title ||
-    (selectedProject
-      ? roleLabels[selectedProject.membership.role]
-      : "Sin proyecto activo");
-
-  async function handleLogout() {
-    if (!supabase) return;
-    await supabase.auth.signOut();
-    router.replace("/login");
-  }
-
-  if (checkingSession || loadingData) {
-    return (
-      <main
-        style={{
-          minHeight: "100vh",
-          display: "grid",
-          placeItems: "center",
-          background: "#f4f7fb",
-          color: "#102a43",
-          fontFamily: "Arial, Helvetica, sans-serif",
-        }}
-      >
-        Cargando TRAZA...
-      </main>
-    );
-  }
-
-  if (!supabase) {
-    return (
-      <main
-        style={{
-          minHeight: "100vh",
-          display: "grid",
-          placeItems: "center",
-          padding: 24,
-          background: "#f4f7fb",
-          color: "#102a43",
-          fontFamily: "Arial, Helvetica, sans-serif",
-        }}
-      >
-        Falta configurar la conexión con Supabase.
-      </main>
-    );
-  }
-
-  return (
-    <main className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <div className={styles.brand}>
-          <div className={styles.brandMark}>T</div>
-          <div>
-            <strong>TRAZA</strong>
-            <span>Gestión de proyectos</span>
-          </div>
-        </div>
-
-        <nav className={styles.nav}>
-          {nav.map(([label, icon]) => (
-            <button
-              key={label}
-              className={`${styles.navItem} ${
-                active === label ? styles.navActive : ""
-              }`}
-              onClick={() => {
-                if (label === "Configuración") {
-                  router.push("/configuracion");
-                  return;
-                }
-                setActive(label);
-              }}
-            >
-              <span>{icon}</span>
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        <div className={styles.sidebarFooter}>
-          <span>TRAZA v1</span>
-          <small>Área inicial: Medio Ambiente</small>
-        </div>
-      </aside>
-
-      <section className={styles.content}>
-        <header className={styles.header}>
-          <div>
-            <span className={styles.eyebrow}>Proyecto activo</span>
-            <h1>{active}</h1>
-          </div>
-
-          <div className={styles.userBox}>
-            <button className={styles.bell} title="Alertas no leídas">
-              🔔{unreadAlertCount > 0 ? ` ${unreadAlertCount}` : ""}
-            </button>
-            <div>
-              <strong>{userLabel}</strong>
-              <span>{workLabel}</span>
-            </div>
-            <button
-              onClick={handleLogout}
-              style={{
-                border: "1px solid #d9e2ec",
-                background: "white",
-                color: "#486581",
-                padding: "9px 12px",
-                borderRadius: 10,
-                cursor: "pointer",
-                fontWeight: 700,
-              }}
-            >
-              Salir
-            </button>
-          </div>
-        </header>
-
-        {dataError && (
-          <section
-            style={{
-              background: "#fff5f5",
-              border: "1px solid #ffd2d2",
-              color: "#b42318",
-              borderRadius: 12,
-              padding: 14,
-              marginBottom: 18,
-            }}
-          >
-            No fue posible cargar tus datos: {dataError}
-          </section>
-        )}
-
-        <section className={styles.filters}>
-          <label>
-            Proyecto
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              disabled={projects.length === 0}
-            >
-              {projects.length === 0 ? (
-                <option value="">Sin proyectos asignados</option>
-              ) : (
-                projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.project_code
-                      ? `${project.project_code} — ${project.name}`
-                      : project.name}
-                  </option>
-                ))
-              )}
-            </select>
-          </label>
-
-          <label>
-            Área
-            <select value={area} onChange={(e) => setArea(e.target.value)}>
-              <option>Medio Ambiente</option>
-              <option disabled>Prevención de Riesgos</option>
-              <option disabled>Calidad</option>
-              <option disabled>Terreno</option>
-              <option disabled>Laboratorio</option>
-            </select>
-          </label>
-        </section>
-
-        {selectedProject && (
-          <section
-            style={{
-              display: "flex",
-              gap: 10,
-              flexWrap: "wrap",
-              marginBottom: 18,
-              color: "#627d98",
-              fontSize: 13,
-            }}
-          >
-            <span>
-              Estado proyecto: <strong>{selectedProject.status}</strong>
-            </span>
-            <span>·</span>
-            <span>
-              Rol:{" "}
-              <strong>{roleLabels[selectedProject.membership.role]}</strong>
-            </span>
-            <span>·</span>
-            <span>
-              Membresía:{" "}
-              <strong>{selectedProject.membership.status}</strong>
-            </span>
-            {workIdentity && (
-              <>
-                <span>·</span>
-                <span>
-                  Identidad laboral: <strong>{workIdentity.status}</strong>
-                </span>
-              </>
-            )}
-          </section>
-        )}
-
-        <section className={styles.statusPanel}>
-          <div>
-            <span className={styles.statusLabel}>
-              Estado ambiental del proyecto
-            </span>
-            <div className={styles.statusTitle}>
-              <span className={styles.statusDot} />
-              ATENCIÓN
-            </div>
-            <p>{statusText}</p>
-          </div>
-          <button className={styles.primaryButton}>Ver alertas</button>
-        </section>
-
-        <section className={styles.metrics}>
-          {dashboardMetrics.map((metric) => (
-            <article key={metric.title} className={styles.metricCard}>
-              <div className={`${styles.tone} ${styles[metric.tone]}`} />
-              <span>{metric.title}</span>
-              <strong>{metric.value}</strong>
-              <small>{metric.detail}</small>
-            </article>
-          ))}
-        </section>
-
-        <section className={styles.lowerGrid}>
-          <article className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <div>
-                <span className={styles.eyebrow}>Seguimiento</span>
-                <h2>Actividad reciente</h2>
-              </div>
-              <button>Ver todo</button>
-            </div>
-
-            <div className={styles.activity}>
-              <div>
-                <span className={styles.ok}>✓</span>
-                <p>
-                  <strong>Inspección ambiental completada</strong>
-                  <small>Registro actualizado</small>
-                </p>
-                <time>Hoy</time>
-              </div>
-              <div>
-                <span className={styles.warn}>!</span>
-                <p>
-                  <strong>Hallazgo N°024 actualizado</strong>
-                  <small>En gestión por contratista</small>
-                </p>
-                <time>Hoy</time>
-              </div>
-              <div>
-                <span className={styles.info}>↗</span>
-                <p>
-                  <strong>Evidencia incorporada</strong>
-                  <small>Fotografía asociada a inspección</small>
-                </p>
-                <time>Ayer</time>
-              </div>
-              <div>
-                <span className={styles.warn}>!</span>
-                <p>
-                  <strong>Permiso próximo a vencer</strong>
-                  <small>Revisión requerida</small>
-                </p>
-                <time>2 días</time>
-              </div>
-            </div>
-          </article>
-
-          <article className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <div>
-                <span className={styles.eyebrow}>Período actual</span>
-                <h2>Cierre mensual</h2>
-              </div>
-            </div>
-
-            <div className={styles.closureBox}>
-              <span>Septiembre 2026</span>
-              <strong>En revisión</strong>
-              <div className={styles.progress}>
-                <i />
-              </div>
-              <small>
-                Los indicadores ambientales todavía son datos de demostración.
-              </small>
-            </div>
-          </article>
-        </section>
-
-        <footer className={styles.note}>
-          TRAZA v1 — Usuario, identidad laboral y proyectos conectados a Supabase.
-        </footer>
+  const logout = async () => { if (supabase) await supabase.auth.signOut(); router.replace("/login"); };
+  if (loading) return <main className={styles.center}>Cargando TRAZA…</main>;
+  return <main className={styles.shell}>
+    <header className={styles.top}>
+      <div><div className={styles.brand}>TRAZA</div><div className={styles.subbrand}>Gestión integral de obras</div></div>
+      <div className={styles.account}><span>{email}</span><button onClick={logout}>Salir</button></div>
+    </header>
+    <div className={styles.content}>
+      <div className={styles.intro}><div><span className={styles.eyebrow}>PORTAL DE ESPECIALIDADES</span><h1>Inicio</h1><p>Selecciona la especialidad autorizada para tu contrato.</p></div></div>
+      {error && <div className={styles.error} role="alert">{error}</div>}
+      <section className={styles.projectBox}>
+        <label htmlFor="project">Contrato / proyecto activo</label>
+        <select id="project" value={selected} onChange={e => setSelected(e.target.value)} disabled={!projects.length}>
+          {!projects.length && <option value="">Sin proyectos activos asignados</option>}
+          {projects.map(p => <option key={p.id} value={p.id}>{p.project_code ? `${p.project_code} — ` : ""}{p.name}</option>)}
+        </select>
+        {membership && <small>Rol asignado en este contrato: {membership.role}</small>}
       </section>
-    </main>
-  );
+      <section className={styles.section}>
+        <div className={styles.sectionHead}><h2>Especialidades</h2><span>{available.filter(m => m.accessible).length} acceso(s) operativos</span></div>
+        <div className={styles.grid}>{available.map(m =>
+          <button type="button" key={m.id} disabled={!m.accessible} className={`${styles.card} ${!m.accessible ? styles.locked : ""}`} onClick={() => router.push(m.path)}>
+            <span className={styles.icon} aria-hidden="true">{m.icon}</span><strong>{m.name}</strong><span className={styles.desc}>{m.desc}</span>
+            <span className={styles.status}>{m.accessible ? "Ingresar →" : !m.enabled ? "No habilitado" : !m.granted ? "🔒 Sin autorización" : "Próximamente"}</span>
+          </button>
+        )}</div>
+      </section>
+      <div className={styles.note}>Los módulos sin autorización no permiten ingresar. El control definitivo también debe aplicarse en la base de datos mediante RLS, no solo en esta pantalla.</div>
+    </div>
+  </main>;
 }

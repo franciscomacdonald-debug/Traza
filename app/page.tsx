@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import styles from "./home.module.css";
 
 import { TRAZA_MODULES as modules } from "@/lib/modules";
+import { getSelectedProject, saveSelectedProject, clearSelectedProject } from "@/lib/selectedProject";
 
 type Membership = { project_id: string; role: string; status: string; valid_from: string | null; valid_until: string | null };
 type Project = { id: string; name: string; project_code: string | null };
@@ -17,6 +18,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");
+  const [userId, setUserId] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [selected, setSelected] = useState("");
@@ -33,6 +35,7 @@ export default function Home() {
       if (!alive) return;
       if (authError || !auth.user) { router.replace("/login"); return; }
       setEmail(auth.user.email || "Usuario TRAZA");
+      setUserId(auth.user.id);
       const { data: members, error: memberError } = await client.from("project_members")
         .select("project_id, role, status, valid_from, valid_until")
         .eq("user_id", auth.user.id).eq("status", "active");
@@ -47,7 +50,11 @@ export default function Home() {
       if (!alive) return;
       if (pError) { setError(pError.message); setLoading(false); return; }
       setProjects((p || []) as Project[]);
-      setSelected((p || [])[0]?.id || "");
+      const projectList = (p || []) as Project[];
+      const savedProject = getSelectedProject(auth.user.id);
+      const initialProject = projectList.some(item => item.id === savedProject) ? savedProject! : (projectList[0]?.id || "");
+      setSelected(initialProject);
+      if (initialProject) saveSelectedProject(auth.user.id, initialProject);
       // Fail closed: without readable permission tables every module stays locked.
       const [permResult, activationResult] = await Promise.all([
         client.from("project_module_permissions").select("project_id, module_id, access_level").eq("user_id", auth.user.id).in("project_id", ids),
@@ -78,7 +85,11 @@ export default function Home() {
     return { ...m, enabled, granted, ready: m.id === "ambiental", accessible: enabled && granted && m.id === "ambiental" };
   }), [activations, membership, permissionSetup, permissions, selected]);
 
-  const logout = async () => { if (supabase) await supabase.auth.signOut(); router.replace("/login"); };
+  const chooseProject = (id: string) => {
+    setSelected(id);
+    if (userId) saveSelectedProject(userId, id);
+  };
+  const logout = async () => { if (userId) clearSelectedProject(userId); if (supabase) await supabase.auth.signOut(); router.replace("/login"); };
   if (loading) return <main className={styles.center}>Cargando TRAZA…</main>;
   return <main className={styles.shell}>
     <header className={styles.top}>
@@ -90,7 +101,7 @@ export default function Home() {
       {error && <div className={styles.error} role="alert">{error}</div>}
       <section className={styles.projectBox}>
         <label htmlFor="project">Contrato / proyecto activo</label>
-        <select id="project" value={selected} onChange={e => setSelected(e.target.value)} disabled={!projects.length}>
+        <select id="project" value={selected} onChange={e => chooseProject(e.target.value)} disabled={!projects.length}>
           {!projects.length && <option value="">Sin proyectos activos asignados</option>}
           {projects.map(p => <option key={p.id} value={p.id}>{p.project_code ? `${p.project_code} — ` : ""}{p.name}</option>)}
         </select>

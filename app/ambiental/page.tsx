@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import styles from "./page.module.css";
+import ModuleGate from "@/components/ModuleGate";
+import type { AccessLevel } from "@/lib/modules";
 
 type Metric = {
   title: string;
@@ -91,7 +93,7 @@ const roleLabels: Record<ProjectMember["role"], string> = {
   viewer: "Consulta",
 };
 
-export default function Home() {
+function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authorizedProjectId: string; accessLevel: AccessLevel }) {
   const router = useRouter();
 
   const [active, setActive] = useState("Dashboard");
@@ -189,7 +191,7 @@ export default function Home() {
         return;
       }
 
-      const projectIds = [...new Set(memberships.map((item) => item.project_id))];
+      const projectIds = [authorizedProjectId];
 
       const { data: projectsData, error: projectsError } = await client
         .from("projects")
@@ -207,7 +209,7 @@ export default function Home() {
 
       const projectRows = (projectsData ?? []) as Project[];
 
-      const accessRows: ProjectAccess[] = projectRows.map((project) => {
+      const accessRows: ProjectAccess[] = projectRows.filter(project => memberships.some(m => m.project_id === project.id && m.status === "active")).map((project) => {
         const membership =
           memberships.find(
             (membership) =>
@@ -242,7 +244,7 @@ export default function Home() {
     });
 
     return () => subscription.unsubscribe();
-  }, [router]);
+  }, [router, authorizedProjectId]);
 
   useEffect(() => {
     if (!supabase || !selectedProjectId) {
@@ -641,4 +643,8 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+export default function EnvironmentalPage() {
+  return <ModuleGate moduleId="ambiental">{({ projectId, accessLevel }) => <EnvironmentalDashboard authorizedProjectId={projectId} accessLevel={accessLevel} />}</ModuleGate>;
 }

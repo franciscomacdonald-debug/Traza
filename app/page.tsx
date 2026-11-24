@@ -5,16 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import styles from "./home.module.css";
 
-const modules = [
-  { id: "ambiental", name: "Medio Ambiente", icon: "🌿", path: "/ambiental", desc: "Inspecciones y cumplimiento ambiental" },
-  { id: "avances", name: "Control de Avances", icon: "📈", path: "/avances", desc: "Programación, mediciones y visaciones" },
-  { id: "documental", name: "Gestión Documental", icon: "📁", path: "/documental", desc: "Archivos, versiones y aprobaciones" },
-  { id: "prevencion", name: "Prevención de Riesgos", icon: "🦺", path: "/prevencion", desc: "Seguridad, incidentes y medidas" },
-  { id: "calidad", name: "Control de Calidad", icon: "✅", path: "/calidad", desc: "Protocolos y no conformidades" },
-  { id: "topografia", name: "Topografía", icon: "📐", path: "/topografia", desc: "Cotas, replanteos y cubicaciones" },
-  { id: "laboratorio", name: "Laboratorio", icon: "🧪", path: "/laboratorio", desc: "Muestras, ensayos y resultados" },
-  { id: "comunidad", name: "Participación Ciudadana", icon: "👥", path: "/comunidad", desc: "Solicitudes y compromisos comunitarios" },
-] as const;
+import { TRAZA_MODULES as modules } from "@/lib/modules";
 
 type Membership = { project_id: string; role: string; status: string; valid_from: string | null; valid_until: string | null };
 type Project = { id: string; name: string; project_code: string | null };
@@ -57,14 +48,15 @@ export default function Home() {
       if (pError) { setError(pError.message); setLoading(false); return; }
       setProjects((p || []) as Project[]);
       setSelected((p || [])[0]?.id || "");
-      // Migration is optional during the first deployment. Without it, legacy environmental
-      // members only receive their existing environmental access; new modules stay locked.
+      // Fail closed: without readable permission tables every module stays locked.
       const [permResult, activationResult] = await Promise.all([
         client.from("project_module_permissions").select("project_id, module_id, access_level").eq("user_id", auth.user.id).in("project_id", ids),
         client.from("project_modules").select("project_id, module_id, enabled").in("project_id", ids),
       ]);
       if (!alive) return;
-      if (!permResult.error && !activationResult.error) {
+      if (permResult.error || activationResult.error) {
+        setError("No se pudieron verificar los permisos de módulos; todos los accesos permanecen bloqueados.");
+      } else {
         setPermissionSetup(true);
         setPermissions((permResult.data || []) as Permission[]);
         setActivations((activationResult.data || []) as Activation[]);
@@ -80,10 +72,8 @@ export default function Home() {
 
   const membership = memberships.find(m => m.project_id === selected);
   const available = useMemo(() => modules.map(m => {
-    const enabled = permissionSetup ? activations.some(a => a.project_id === selected && a.module_id === m.id && a.enabled) : m.id === "ambiental";
-    const granted = permissionSetup
-      ? permissions.some(p => p.project_id === selected && p.module_id === m.id && ["view", "edit", "approve", "admin"].includes(p.access_level))
-      : m.id === "ambiental" && !!membership;
+    const enabled = permissionSetup && activations.some(a => a.project_id === selected && a.module_id === m.id && a.enabled);
+    const granted = permissionSetup && permissions.some(p => p.project_id === selected && p.module_id === m.id && ["view", "edit", "approve", "admin"].includes(p.access_level));
     // Only the existing environmental route is implemented in this phase.
     return { ...m, enabled, granted, ready: m.id === "ambiental", accessible: enabled && granted && m.id === "ambiental" };
   }), [activations, membership, permissionSetup, permissions, selected]);
@@ -109,7 +99,7 @@ export default function Home() {
       <section className={styles.section}>
         <div className={styles.sectionHead}><h2>Especialidades</h2><span>{available.filter(m => m.accessible).length} acceso(s) operativos</span></div>
         <div className={styles.grid}>{available.map(m =>
-          <button type="button" key={m.id} disabled={!m.accessible} className={`${styles.card} ${!m.accessible ? styles.locked : ""}`} onClick={() => router.push(m.path)}>
+          <button type="button" key={m.id} disabled={!m.accessible} className={`${styles.card} ${!m.accessible ? styles.locked : ""}`} onClick={() => router.push(`${m.path}?project=${encodeURIComponent(selected)}`)}>
             <span className={styles.icon} aria-hidden="true">{m.icon}</span><strong>{m.name}</strong><span className={styles.desc}>{m.desc}</span>
             <span className={styles.status}>{m.accessible ? "Ingresar →" : !m.enabled ? "No habilitado" : !m.granted ? "🔒 Sin autorización" : "Próximamente"}</span>
           </button>

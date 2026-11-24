@@ -1,12 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import type { AccessLevel, ModuleId } from "@/lib/modules";
 
 type State = { status: "loading" | "allowed" | "denied"; message?: string; projectId?: string; accessLevel?: AccessLevel };
-export default function ModuleGate({ moduleId, children }: { moduleId: ModuleId; children: (access: {projectId: string; accessLevel: AccessLevel}) => ReactNode }) {
+function ModuleGateContent({ moduleId, children }: { moduleId: ModuleId; children: (access: {projectId: string; accessLevel: AccessLevel}) => ReactNode }) {
   const router = useRouter();
   const search = useSearchParams();
   const projectId = search.get("project");
@@ -55,4 +55,14 @@ export default function ModuleGate({ moduleId, children }: { moduleId: ModuleId;
       <button onClick={() => router.push("/")} style={{border:0,borderRadius:8,padding:"12px 18px",background:"#1664c0",color:"white",cursor:"pointer"}}>Volver al inicio de TRAZA</button>
     </section>
   </main>;
+}
+
+
+// Next.js needs a Suspense boundary for useSearchParams during static prerender.
+export default function ModuleGate({ moduleId, children }: { moduleId: ModuleId; children: (access: {projectId: string; accessLevel: AccessLevel}) => ReactNode }) {
+  return (
+    <Suspense fallback={<main style={{minHeight:"85vh",display:"grid",placeItems:"center",background:"#f4f7fb",padding:24}}><p>Verificando acceso al módulo…</p></main>}>
+      <ModuleGateContent moduleId={moduleId}>{children}</ModuleGateContent>
+    </Suspense>
+  );
 }

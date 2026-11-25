@@ -8,6 +8,7 @@ import styles from "./page.module.css";
 import ModuleGate from "@/components/ModuleGate";
 import type { AccessLevel } from "@/lib/modules";
 import DocumentLibrary from "@/components/ambiental/DocumentLibrary";
+import ObligationDocuments from "@/components/ambiental/ObligationDocuments";
 
 type Metric = {
   title: string;
@@ -549,6 +550,8 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
 
         {active === "Documentos" ? (
           <DocumentLibrary projectId={authorizedProjectId} projectName={selectedProject.name} accessLevel={accessLevel} />
+        ) : active === "Obligaciones" ? (
+          <ObligationDocuments projectId={authorizedProjectId} accessLevel={accessLevel} />
         ) : (<>
         <section className={styles.statusPanel}>
           <div>

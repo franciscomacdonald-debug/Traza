@@ -1,0 +1,184 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
+import { supabase } from "@/lib/supabase";
+import type { AccessLevel } from "@/lib/modules";
+import styles from "./DocumentLibrary.module.css";
+
+type Source = { id: string; project_id: string | null; source_scope: "central" | "project"; source_type: string; title: string; reference_code: string | null; issuing_authority: string | null; description: string | null; created_at: string };
+type Version = { id: string; source_id: string; version_label: string; status: string; file_path: string | null; external_reference: string | null; publication_date: string | null; effective_from: string | null; effective_until: string | null; created_at: string };
+type SourceType = "legal_regulation" | "contract" | "technical_specification" | "pga" | "plan" | "procedure" | "rca" | "permit" | "resolution" | "mop_manual" | "technical_reference" | "other";
+const types: { value: SourceType; label: string }[] = [
+  { value: "legal_regulation", label: "Normativa legal" }, { value: "contract", label: "Contrato" }, { value: "technical_specification", label: "Especificaciones técnicas" },
+  { value: "pga", label: "Plan de gestión ambiental" }, { value: "plan", label: "Plan" }, { value: "procedure", label: "Procedimiento" },
+  { value: "rca", label: "RCA" }, { value: "permit", label: "Permiso" }, { value: "resolution", label: "Resolución" },
+  { value: "mop_manual", label: "Manual MOP" }, { value: "technical_reference", label: "Referencia técnica" }, { value: "other", label: "Otro" },
+];
+const typeLabel = (value: string) => types.find(t => t.value === value)?.label || value;
+const stateLabel: Record<string, string> = { draft: "Borrador", active: "Vigente", superseded: "Reemplazada", repealed: "Derogada", expired: "Vencida", archived: "Archivada" };
+const initialSource = { title: "", source_type: "technical_specification" as SourceType, reference_code: "", issuing_authority: "", description: "" };
+const initialVersion = { version_label: "", file_path: "", external_reference: "", publication_date: "", effective_from: "", effective_until: "", notes: "" };
+
+export default function DocumentLibrary({ projectId, projectName, accessLevel }: { projectId: string; projectName: string; accessLevel: AccessLevel }) {
+  const [sources, setSources] = useState<Source[]>([]);
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [query, setQuery] = useState("");
+  const [scope, setScope] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [modal, setModal] = useState<"source" | "version" | null>(null);
+  const [sourceForm, setSourceForm] = useState(initialSource);
+  const [versionForm, setVersionForm] = useState(initialVersion);
+  const [activeSource, setActiveSource] = useState<Source | null>(null);
+  const [saving, setSaving] = useState(false);
+  const canEdit = accessLevel === "edit" || accessLevel === "admin";
+  const canApprove = accessLevel === "approve" || accessLevel === "admin";
+
+  const refresh = useCallback(async () => {
+    if (!supabase) { setError("Falta la configuración de Supabase."); setLoading(false); return; }
+    setLoading(true);
+    setError("");
+    const { data: docs, error: sourceError } = await supabase.from("environmental_sources")
+      .select("id,project_id,source_scope,source_type,title,reference_code,issuing_authority,description,created_at")
+      .or(`source_scope.eq.central,project_id.eq.${projectId}`)
+      .order("created_at", { ascending: false });
+    if (sourceError) { setError(`No se pudieron consultar las fuentes: ${sourceError.message}`); setLoading(false); return; }
+    const found = (docs || []) as Source[];
+    setSources(found);
+    if (!found.length) { setVersions([]); setLoading(false); return; }
+    const { data: revs, error: versionError } = await supabase.from("environmental_source_versions")
+      .select("id,source_id,version_label,status,file_path,external_reference,publication_date,effective_from,effective_until,created_at")
+      .in("source_id", found.map(s => s.id))
+      .order("created_at", { ascending: false });
+    if (versionError) { setError(`No se pudieron consultar las versiones: ${versionError.message}`); setVersions([]); }
+    else setVersions((revs || []) as Version[]);
+    setLoading(false);
+  }, [projectId]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+  const versionMap = useMemo(() => {
+    const map = new Map<string, Version[]>();
+    for (const version of versions) map.set(version.source_id, [...(map.get(version.source_id) || []), version]);
+    return map;
+  }, [versions]);
+  const filtered = useMemo(() => sources.filter(s => {
+    const matchesText = [s.title, s.reference_code, s.issuing_authority].some(v => (v || "").toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()));
+    return matchesText && (scope === "all" || s.source_scope === scope) && (typeFilter === "all" || s.source_type === typeFilter);
+  }), [sources, query, scope, typeFilter]);
+  const activeCount = versions.filter(v => v.status === "active").length;
+  const draftCount = versions.filter(v => v.status === "draft").length;
+
+  async function createSource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !canEdit || saving) return;
+    setSaving(true); setError(""); setNotice("");
+    const { data, error: rpcError } = await supabase.rpc("create_project_environmental_source", {
+      p_project_id: projectId,
+      p_source_type: sourceForm.source_type,
+      p_title: sourceForm.title.trim(),
+      p_reference_code: sourceForm.reference_code.trim() || null,
+      p_issuing_authority: sourceForm.issuing_authority.trim() || null,
+      p_description: sourceForm.description.trim() || null,
+    });
+    setSaving(false);
+    if (rpcError) { setError(`No se pudo registrar el documento: ${rpcError.message}`); return; }
+    setModal(null); setSourceForm(initialSource); setNotice("Documento registrado correctamente.");
+    if (typeof data === "string") setExpanded(data);
+    await refresh();
+  }
+  async function createVersion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !canEdit || !activeSource || saving) return;
+    setSaving(true); setError(""); setNotice("");
+    const { error: rpcError } = await supabase.rpc("create_project_environmental_source_version", {
+      p_source_id: activeSource.id, p_version_label: versionForm.version_label.trim(),
+      p_file_path: versionForm.file_path.trim() || null,
+      p_external_reference: versionForm.external_reference.trim() || null,
+      p_publication_date: versionForm.publication_date || null,
+      p_effective_from: versionForm.effective_from || null,
+      p_effective_until: versionForm.effective_until || null,
+      p_notes: versionForm.notes.trim() || null,
+    });
+    setSaving(false);
+    if (rpcError) { setError(`No se pudo crear la versión: ${rpcError.message}`); return; }
+    setModal(null); setActiveSource(null); setVersionForm(initialVersion); setNotice("Versión creada como borrador.");
+    await refresh();
+  }
+  async function activateVersion(version: Version) {
+    if (!supabase || !canApprove || saving) return;
+    if (!window.confirm(`¿Confirmas activar la versión ${version.version_label}? La versión vigente anterior será reemplazada.`)) return;
+    setSaving(true); setError(""); setNotice("");
+    const { error: rpcError } = await supabase.rpc("activate_project_environmental_source_version", { p_version_id: version.id });
+    setSaving(false);
+    if (rpcError) { setError(`No fue posible activar la versión: ${rpcError.message}`); return; }
+    setNotice(`Versión ${version.version_label} activada correctamente.`); await refresh();
+  }
+
+  return <section className={styles.root}>
+    <div className={styles.heading}>
+      <div><span className={styles.eyebrow}>Medio Ambiente · Biblioteca</span><h2>Gestión documental ambiental</h2><p>{projectName} · Fuentes del proyecto y referencias centrales</p></div>
+      {canEdit && <button className={styles.primary} onClick={() => { setError(""); setSourceForm(initialSource); setModal("source"); }}>+ Nuevo documento</button>}
+    </div>
+    <div className={styles.metrics}>
+      <article><span>Fuentes disponibles</span><strong>{sources.length}</strong></article>
+      <article><span>Versiones vigentes</span><strong>{activeCount}</strong></article>
+      <article><span>Borradores</span><strong>{draftCount}</strong></article>
+    </div>
+    {error && <p className={styles.error} role="alert">{error}</p>}
+    {notice && <p className={styles.notice} role="status">{notice}</p>}
+    <div className={styles.toolbar}>
+      <input aria-label="Buscar documentos" placeholder="Buscar por documento, código o autoridad..." value={query} onChange={e => setQuery(e.target.value)} />
+      <select aria-label="Ámbito documental" value={scope} onChange={e => setScope(e.target.value)}><option value="all">Todos los ámbitos</option><option value="project">De este proyecto</option><option value="central">Centrales</option></select>
+      <select aria-label="Tipo de documento" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="all">Todos los tipos</option>{types.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
+      <button className={styles.secondary} onClick={() => void refresh()} disabled={loading}>Actualizar</button>
+    </div>
+    {loading ? <p className={styles.empty}>Cargando documentos desde Supabase…</p> : filtered.length === 0 ? <div className={styles.empty}><strong>No hay documentos para mostrar.</strong><p>Puedes registrar la primera fuente del proyecto, si tienes permiso de edición.</p></div> :
+      <div className={styles.list}>{filtered.map(source => {
+        const revs = versionMap.get(source.id) || [];
+        const official = revs.find(v => v.status === "active");
+        return <article className={styles.document} key={source.id}>
+          <button type="button" className={styles.documentHeading} aria-expanded={expanded === source.id} onClick={() => setExpanded(expanded === source.id ? null : source.id)}>
+            <span className={styles.documentIcon}>▤</span><span className={styles.documentTitle}><strong>{source.title}</strong><small>{typeLabel(source.source_type)} · {source.reference_code || "Sin código"} · {source.source_scope === "central" ? "Fuente central" : "Fuente del proyecto"}</small></span>
+            <span className={official ? styles.active : styles.muted}>{official ? `Vigente ${official.version_label}` : revs.length ? "Sin versión vigente" : "Sin versiones"}</span><span className={styles.chevron}>{expanded === source.id ? "−" : "+"}</span>
+          </button>
+          {expanded === source.id && <div className={styles.details}>
+            {source.description && <p>{source.description}</p>}
+            {source.issuing_authority && <p><strong>Autoridad:</strong> {source.issuing_authority}</p>}
+            <div className={styles.detailsHeading}><strong>Versiones ({revs.length})</strong>{source.source_scope === "project" && canEdit && <button className={styles.secondary} onClick={() => { setActiveSource(source); setVersionForm(initialVersion); setError(""); setModal("version"); }}>+ Agregar versión</button>}</div>
+            {!revs.length ? <p className={styles.hint}>Aún no hay versiones de este documento.</p> : <div className={styles.versions}>{revs.map(version => <div key={version.id} className={styles.version}>
+              <div><strong>{version.version_label}</strong><span className={version.status === "active" ? styles.active : styles.muted}>{stateLabel[version.status] || version.status}</span><small>{version.file_path ? `Ruta registrada: ${version.file_path}` : version.external_reference ? `Referencia: ${version.external_reference}` : "Sin archivo asociado"}</small></div>
+              {source.source_scope === "project" && version.status === "draft" && canApprove && <button className={styles.secondary} onClick={() => void activateVersion(version)} disabled={saving || (!version.file_path && !version.external_reference)}>Activar</button>}
+            </div>)}</div>}
+            <p className={styles.hint}>Las rutas registradas no acreditan la existencia de archivos en Storage. La carga de archivos se integrará por separado.</p>
+          </div>}
+        </article>;
+      })}</div>}
+    {modal && <div className={styles.overlay} role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !saving) setModal(null); }}>
+      <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div className={styles.modalHead}><h3 id="modal-title">{modal === "source" ? "Nuevo documento ambiental" : `Nueva versión · ${activeSource?.title}`}</h3><button type="button" aria-label="Cerrar" onClick={() => setModal(null)} disabled={saving}>✕</button></div>
+        <form onSubmit={modal === "source" ? createSource : createVersion} className={styles.form}>
+          {error && <p className={styles.error} role="alert">{error}</p>}
+          {modal === "source" ? <>
+            <label>Título del documento *<input required maxLength={200} value={sourceForm.title} onChange={e => setSourceForm({ ...sourceForm, title: e.target.value })}/></label>
+            <label>Tipo de documento *<select value={sourceForm.source_type} onChange={e => setSourceForm({ ...sourceForm, source_type: e.target.value as SourceType })}>{types.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></label>
+            <label>Código de referencia<input value={sourceForm.reference_code} onChange={e => setSourceForm({ ...sourceForm, reference_code: e.target.value })}/></label>
+            <label>Autoridad emisora<input value={sourceForm.issuing_authority} onChange={e => setSourceForm({ ...sourceForm, issuing_authority: e.target.value })}/></label>
+            <label>Descripción<textarea rows={3} value={sourceForm.description} onChange={e => setSourceForm({ ...sourceForm, description: e.target.value })}/></label>
+          </> : <>
+            <label>Etiqueta de versión *<input required placeholder="Ej. V1, Rev. 02" value={versionForm.version_label} onChange={e => setVersionForm({ ...versionForm, version_label: e.target.value })}/></label>
+            <label>Ruta existente en Storage (no sube archivos)<input placeholder="documentos/archivo.pdf" value={versionForm.file_path} onChange={e => setVersionForm({ ...versionForm, file_path: e.target.value })}/></label>
+            <label>Referencia externa<input value={versionForm.external_reference} onChange={e => setVersionForm({ ...versionForm, external_reference: e.target.value })}/></label>
+            <div className={styles.dateGrid}><label>Publicación<input type="date" value={versionForm.publication_date} onChange={e => setVersionForm({ ...versionForm, publication_date: e.target.value })}/></label><label>Vigente desde<input type="date" value={versionForm.effective_from} onChange={e => setVersionForm({ ...versionForm, effective_from: e.target.value })}/></label><label>Vigente hasta<input type="date" min={versionForm.effective_from || undefined} value={versionForm.effective_until} onChange={e => setVersionForm({ ...versionForm, effective_until: e.target.value })}/></label></div>
+            <label>Notas<textarea rows={3} value={versionForm.notes} onChange={e => setVersionForm({ ...versionForm, notes: e.target.value })}/></label>
+            <p className={styles.hint}>La nueva versión se crea como borrador. La publicación requiere aprobación y un archivo o referencia documental.</p>
+          </>}
+          <div className={styles.actions}><button type="button" className={styles.secondary} onClick={() => setModal(null)} disabled={saving}>Cancelar</button><button className={styles.primary} type="submit" disabled={saving}>{saving ? "Guardando…" : modal === "source" ? "Registrar documento" : "Crear borrador"}</button></div>
+        </form>
+      </section>
+    </div>}
+  </section>;
+}

@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import styles from "./page.module.css";
 import ModuleGate from "@/components/ModuleGate";
 import type { AccessLevel } from "@/lib/modules";
+import DocumentLibrary from "@/components/ambiental/DocumentLibrary";
 
 type Metric = {
   title: string;
@@ -82,6 +83,7 @@ const nav = [
   ["Residuos", "♻"],
   ["Cierre mensual", "▤"],
   ["Informes", "▤"],
+  ["Documentos", "▤"],
   ["Configuración", "⚙"],
 ];
 
@@ -545,6 +547,9 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
           </section>
         )}
 
+        {active === "Documentos" ? (
+          <DocumentLibrary projectId={authorizedProjectId} projectName={selectedProject.name} accessLevel={accessLevel} />
+        ) : (<>
         <section className={styles.statusPanel}>
           <div>
             <span className={styles.statusLabel}>
@@ -637,6 +642,7 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
           </article>
         </section>
 
+        </>)}
         <footer className={styles.note}>
           TRAZA v1 — Usuario, identidad laboral y proyectos conectados a Supabase.
         </footer>

@@ -7,7 +7,8 @@ import type { AccessLevel } from "@/lib/modules";
 import styles from "./DocumentLibrary.module.css";
 
 type Source = { id: string; project_id: string | null; source_scope: "central" | "project"; source_type: string; title: string; reference_code: string | null; issuing_authority: string | null; description: string | null; created_at: string };
-type Version = { id: string; source_id: string; version_label: string; status: string; file_path: string | null; external_reference: string | null; publication_date: string | null; effective_from: string | null; effective_until: string | null; created_at: string };
+type Version = { id: string; source_id: string; version_label: string; status: string; file_path: string | null; external_reference: string | null; publication_date: string | null; effective_from: string | null; effective_until: string | null; created_at: string; notes: string | null };
+type AuditEvent = { id: number; entity_id: string | null; user_id: string | null; action: string; created_at: string; old_data: Record<string, unknown> | null; new_data: Record<string, unknown> | null };
 type SourceType = "legal_regulation" | "contract" | "technical_specification" | "pga" | "plan" | "procedure" | "rca" | "permit" | "resolution" | "mop_manual" | "technical_reference" | "other";
 const types: { value: SourceType; label: string }[] = [
   { value: "legal_regulation", label: "Normativa legal" }, { value: "contract", label: "Contrato" }, { value: "technical_specification", label: "Especificaciones técnicas" },
@@ -25,6 +26,9 @@ const initialVersion = { version_label: "", file_path: "", external_reference: "
 export default function DocumentLibrary({ projectId, projectName, accessLevel }: { projectId: string; projectName: string; accessLevel: AccessLevel }) {
   const [sources, setSources] = useState<Source[]>([]);
   const [versions, setVersions] = useState<Version[]>([]);
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [auditMessage, setAuditMessage] = useState("");
+  const [showHistory, setShowHistory] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -32,7 +36,8 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
   const [scope, setScope] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [modal, setModal] = useState<"source" | "version" | null>(null);
+  const [modal, setModal] = useState<"source" | "version" | "edit" | null>(null);
+  const [editingVersion, setEditingVersion] = useState<Version | null>(null);
   const [sourceForm, setSourceForm] = useState(initialSource);
   const [versionForm, setVersionForm] = useState(initialVersion);
   const [activeSource, setActiveSource] = useState<Source | null>(null);
@@ -53,13 +58,27 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
     if (sourceError) { setError(`No se pudieron consultar las fuentes: ${sourceError.message}`); setLoading(false); return; }
     const found = (docs || []) as Source[];
     setSources(found);
-    if (!found.length) { setVersions([]); setLoading(false); return; }
+    if (!found.length) { setVersions([]); setAuditEvents([]); setLoading(false); return; }
     const { data: revs, error: versionError } = await supabase.from("environmental_source_versions")
-      .select("id,source_id,version_label,status,file_path,external_reference,publication_date,effective_from,effective_until,created_at")
+      .select("id,source_id,version_label,status,file_path,external_reference,publication_date,effective_from,effective_until,created_at,notes")
       .in("source_id", found.map(s => s.id))
       .order("created_at", { ascending: false });
     if (versionError) { setError(`No se pudieron consultar las versiones: ${versionError.message}`); setVersions([]); }
     else setVersions((revs || []) as Version[]);
+    // La auditoría tiene una política RLS independiente (administradores del proyecto).
+    // Un usuario sin acceso al historial conserva la biblioteca funcional.
+    const ids = (revs || []).map(v => v.id);
+    if (ids.length) {
+      const { data: events, error: auditError } = await supabase.from("audit_log")
+        .select("id,entity_id,user_id,action,created_at,old_data,new_data")
+        .eq("project_id", projectId)
+        .eq("entity_type", "environmental_source_version")
+        .in("entity_id", ids)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (auditError) { setAuditEvents([]); setAuditMessage("Historial disponible solo para responsables autorizados del proyecto."); }
+      else { setAuditEvents((events || []) as AuditEvent[]); setAuditMessage(""); }
+    } else { setAuditEvents([]); setAuditMessage(""); }
     setLoading(false);
   }, [projectId]);
 
@@ -164,7 +183,7 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
       let message = "Versión creada como borrador.";
       if (file) {
         try {
-          await uploadPdf(source, { id: data, source_id: source.id, version_label: versionForm.version_label, status: "draft", file_path: null, external_reference: null, publication_date: null, effective_from: null, effective_until: null, created_at: "" }, file);
+          await uploadPdf(source, { id: data, source_id: source.id, version_label: versionForm.version_label, status: "draft", file_path: null, external_reference: null, publication_date: null, effective_from: null, effective_until: null, created_at: "", notes: null }, file);
           message = "Versión creada y PDF guardado en Storage.";
         } catch (e) {
           message = `Versión creada, pero no se pudo vincular el PDF: ${e instanceof Error ? e.message : "error desconocido"}. Puedes reintentar desde el borrador.`;
@@ -175,6 +194,49 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
     } catch (e) { setError(e instanceof Error ? e.message : "No fue posible crear la versión."); }
     finally { setSaving(false); }
   }
+  function openDraftEditor(source: Source, version: Version) {
+    setActiveSource(source);
+    setEditingVersion(version);
+    setVersionForm({
+      version_label: version.version_label,
+      file_path: "",
+      external_reference: version.external_reference || "",
+      publication_date: version.publication_date || "",
+      effective_from: version.effective_from || "",
+      effective_until: version.effective_until || "",
+      notes: version.notes || "",
+    });
+    setError(""); setModal("edit");
+  }
+
+  async function saveDraft(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !editingVersion || !canEdit || saving) return;
+    setSaving(true); setError(""); setNotice("");
+    const { error: rpcError } = await supabase.rpc("update_project_environmental_source_draft", {
+      p_version_id: editingVersion.id,
+      p_version_label: versionForm.version_label.trim(),
+      p_publication_date: versionForm.publication_date || null,
+      p_effective_from: versionForm.effective_from || null,
+      p_effective_until: versionForm.effective_until || null,
+      p_external_reference: versionForm.external_reference.trim() || null,
+      p_notes: versionForm.notes.trim() || null,
+    });
+    setSaving(false);
+    if (rpcError) { setError(`No se pudo editar el borrador: ${rpcError.message}`); return; }
+    setModal(null); setEditingVersion(null); setNotice("Borrador actualizado y cambio registrado en auditoría.");
+    await refresh();
+  }
+
+  function describeAudit(event: AuditEvent) {
+    const actions: Record<string, string> = {
+      environmental_source_version_activated: "Versión activada",
+      environmental_source_version_file_attached: "PDF vinculado",
+      environmental_source_version_draft_updated: "Borrador editado",
+    };
+    return actions[event.action] || event.action.replaceAll("_", " ");
+  }
+
   async function activateVersion(version: Version) {
     if (!supabase || !canApprove || saving) return;
     if (!window.confirm(`¿Confirmas activar la versión ${version.version_label}? La versión vigente anterior será reemplazada.`)) return;
@@ -219,20 +281,40 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
             {!revs.length ? <p className={styles.hint}>Aún no hay versiones de este documento.</p> : <div className={styles.versions}>{revs.map(version => <div key={version.id} className={styles.version}>
               <div><strong>{version.version_label}</strong><span className={version.status === "active" ? styles.active : styles.muted}>{stateLabel[version.status] || version.status}</span><small>{version.file_path ? (version.file_path.startsWith(`${projectId}/ambiental/${source.id}/${version.id}/`) ? "PDF almacenado en TRAZA" : `Ruta antigua (no verificada): ${version.file_path}`) : version.external_reference ? `Referencia: ${version.external_reference}` : "Sin archivo asociado"}</small></div>
               <div className={styles.versionActions}>
+                {source.source_scope === "project" && version.status === "draft" && canEdit && <button type="button" className={styles.secondary} onClick={() => openDraftEditor(source, version)}>Editar borrador</button>}
                 {version.file_path?.startsWith(`${projectId}/ambiental/${source.id}/${version.id}/`) && <button type="button" className={styles.secondary} onClick={() => void openPdf(source, version)}>Ver PDF</button>}
                 {version.external_reference && /^https:\/\//i.test(version.external_reference) && <a className={styles.secondary} href={version.external_reference} target="_blank" rel="noopener noreferrer">Ver enlace</a>}
                 {source.source_scope === "project" && version.status === "draft" && canEdit && !version.file_path && <label className={styles.uploadLabel}>{uploadingId === version.id ? "Subiendo…" : "Subir PDF"}<input type="file" accept=".pdf,application/pdf" disabled={!!uploadingId || saving} onChange={e => { void uploadExistingVersion(source, version, e.target.files?.[0]); e.target.value = ""; }}/></label>}
                 {source.source_scope === "project" && version.status === "draft" && canApprove && <button className={styles.secondary} onClick={() => void activateVersion(version)} disabled={saving || !!uploadingId || (!version.file_path?.startsWith(`${projectId}/ambiental/${source.id}/${version.id}/`) && !/^https:\/\//i.test(version.external_reference || ""))}>Activar</button>}
               </div>
             </div>)}</div>}
+            <div className={styles.detailsHeading}>
+              <strong>Historial de actividad</strong>
+              <button type="button" className={styles.secondary} onClick={() => setShowHistory(showHistory === source.id ? null : source.id)}>
+                {showHistory === source.id ? "Ocultar historial" : "Ver historial"}
+              </button>
+            </div>
+            {showHistory === source.id && <div className={styles.history}>
+              {auditMessage && <p className={styles.hint}>{auditMessage}</p>}
+              {auditEvents.filter(event => revs.some(v => v.id === event.entity_id)).length === 0
+                ? <p className={styles.hint}>No hay actividades disponibles para estas versiones.</p>
+                : auditEvents.filter(event => revs.some(v => v.id === event.entity_id)).map(event => {
+                  const version = revs.find(v => v.id === event.entity_id);
+                  return <div className={styles.historyItem} key={event.id}>
+                    <strong>{describeAudit(event)} · {version?.version_label || "Versión"}</strong>
+                    <small>{new Date(event.created_at).toLocaleString("es-CL")} · Usuario: {event.user_id || "Sin identificación"}</small>
+                    {event.action === "environmental_source_version_draft_updated" && <small>Metadatos del borrador actualizados</small>}
+                  </div>;
+                })}
+            </div>}
             <p className={styles.hint}>Los PDF nuevos se guardan en Storage privado. Las rutas antiguas no representan archivos disponibles y deben regularizarse.</p>
           </div>}
         </article>;
       })}</div>}
     {modal && <div className={styles.overlay} role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !saving) setModal(null); }}>
       <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <div className={styles.modalHead}><h3 id="modal-title">{modal === "source" ? "Nuevo documento ambiental" : `Nueva versión · ${activeSource?.title}`}</h3><button type="button" aria-label="Cerrar" onClick={() => setModal(null)} disabled={saving}>✕</button></div>
-        <form onSubmit={modal === "source" ? createSource : createVersion} className={styles.form}>
+        <div className={styles.modalHead}><h3 id="modal-title">{modal === "source" ? "Nuevo documento ambiental" : modal === "edit" ? `Editar borrador · ${activeSource?.title}` : `Nueva versión · ${activeSource?.title}`}</h3><button type="button" aria-label="Cerrar" onClick={() => setModal(null)} disabled={saving}>✕</button></div>
+        <form onSubmit={modal === "source" ? createSource : modal === "edit" ? saveDraft : createVersion} className={styles.form}>
           {error && <p className={styles.error} role="alert">{error}</p>}
           {modal === "source" ? <>
             <label>Título del documento *<input required maxLength={200} value={sourceForm.title} onChange={e => setSourceForm({ ...sourceForm, title: e.target.value })}/></label>
@@ -242,13 +324,13 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
             <label>Descripción<textarea rows={3} value={sourceForm.description} onChange={e => setSourceForm({ ...sourceForm, description: e.target.value })}/></label>
           </> : <>
             <label>Etiqueta de versión *<input required placeholder="Ej. V1, Rev. 02" value={versionForm.version_label} onChange={e => setVersionForm({ ...versionForm, version_label: e.target.value })}/></label>
-            <label>Subir archivo PDF (opcional)<input type="file" accept=".pdf,application/pdf" onChange={e => setSelectedPdf(e.target.files?.[0] || null)}/><span className={styles.hint}>Máximo 20 MB. El PDF se subirá al bucket privado traza-documents.</span></label>
+            {modal === "version" && <label>Subir archivo PDF (opcional)<input type="file" accept=".pdf,application/pdf" onChange={e => setSelectedPdf(e.target.files?.[0] || null)}/><span className={styles.hint}>Máximo 20 MB. El PDF se subirá al bucket privado traza-documents.</span></label>}
             <label>Referencia externa<input value={versionForm.external_reference} onChange={e => setVersionForm({ ...versionForm, external_reference: e.target.value })}/></label>
             <div className={styles.dateGrid}><label>Publicación<input type="date" value={versionForm.publication_date} onChange={e => setVersionForm({ ...versionForm, publication_date: e.target.value })}/></label><label>Vigente desde<input type="date" value={versionForm.effective_from} onChange={e => setVersionForm({ ...versionForm, effective_from: e.target.value })}/></label><label>Vigente hasta<input type="date" min={versionForm.effective_from || undefined} value={versionForm.effective_until} onChange={e => setVersionForm({ ...versionForm, effective_until: e.target.value })}/></label></div>
             <label>Notas<textarea rows={3} value={versionForm.notes} onChange={e => setVersionForm({ ...versionForm, notes: e.target.value })}/></label>
-            <p className={styles.hint}>La nueva versión se crea como borrador. Puedes subir el PDF ahora o después. Para activarla necesita un archivo guardado en TRAZA o una referencia HTTPS.</p>
+            <p className={styles.hint}>{modal === "edit" ? "Solo se editan metadatos del borrador. El PDF ya asociado no se reemplaza desde aquí." : "La nueva versión se crea como borrador. Puedes subir el PDF ahora o después. Para activarla necesita un archivo guardado en TRAZA o una referencia HTTPS."}</p>
           </>}
-          <div className={styles.actions}><button type="button" className={styles.secondary} onClick={() => setModal(null)} disabled={saving}>Cancelar</button><button className={styles.primary} type="submit" disabled={saving}>{saving ? "Guardando…" : modal === "source" ? "Registrar documento" : "Crear borrador"}</button></div>
+          <div className={styles.actions}><button type="button" className={styles.secondary} onClick={() => setModal(null)} disabled={saving}>Cancelar</button><button className={styles.primary} type="submit" disabled={saving}>{saving ? "Guardando…" : modal === "source" ? "Registrar documento" : modal === "edit" ? "Guardar cambios" : "Crear borrador"}</button></div>
         </form>
       </section>
     </div>}

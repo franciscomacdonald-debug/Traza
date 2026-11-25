@@ -183,7 +183,20 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
       let message = "Versión creada como borrador.";
       if (file) {
         try {
-          await uploadPdf(source, { id: data, source_id: source.id, version_label: versionForm.version_label, status: "draft", file_path: null, external_reference: null, publication_date: null, effective_from: null, effective_until: null, created_at: "", notes: null }, file);
+  await uploadPdf(source, {
+  id: data,
+  source_id: source.id,
+  version_label: versionForm.version_label,
+  status: "draft",
+  file_path: null,
+  external_reference: null,
+  publication_date: null,
+  effective_from: null,
+  effective_until: null,
+  created_at: "",
+  notes: null
+}, file);
+
           message = "Versión creada y PDF guardado en Storage.";
         } catch (e) {
           message = `Versión creada, pero no se pudo vincular el PDF: ${e instanceof Error ? e.message : "error desconocido"}. Puedes reintentar desde el borrador.`;

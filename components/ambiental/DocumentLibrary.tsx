@@ -18,6 +18,8 @@ const types: { value: SourceType; label: string }[] = [
 const typeLabel = (value: string) => types.find(t => t.value === value)?.label || value;
 const stateLabel: Record<string, string> = { draft: "Borrador", active: "Vigente", superseded: "Reemplazada", repealed: "Derogada", expired: "Vencida", archived: "Archivada" };
 const initialSource = { title: "", source_type: "technical_specification" as SourceType, reference_code: "", issuing_authority: "", description: "" };
+const BUCKET = "traza-documents";
+const MAX_PDF_BYTES = 20 * 1024 * 1024;
 const initialVersion = { version_label: "", file_path: "", external_reference: "", publication_date: "", effective_from: "", effective_until: "", notes: "" };
 
 export default function DocumentLibrary({ projectId, projectName, accessLevel }: { projectId: string; projectName: string; accessLevel: AccessLevel }) {
@@ -35,6 +37,8 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
   const [versionForm, setVersionForm] = useState(initialVersion);
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [selectedPdf, setSelectedPdf] = useState<File | null>(null);
   const canEdit = accessLevel === "edit" || accessLevel === "admin";
   const canApprove = accessLevel === "approve" || accessLevel === "admin";
 
@@ -90,23 +94,86 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
     if (typeof data === "string") setExpanded(data);
     await refresh();
   }
+  function validatePdf(file: File): string | null {
+    if (!file.name.toLowerCase().endsWith(".pdf") || file.type && file.type !== "application/pdf") return "Selecciona un archivo PDF válido.";
+    if (file.size === 0) return "El archivo está vacío.";
+    if (file.size > MAX_PDF_BYTES) return "El PDF supera los 20 MB permitidos.";
+    return null;
+  }
+
+  async function uploadPdf(source: Source, version: Version, file: File): Promise<string> {
+    if (!supabase || source.source_scope !== "project" || source.project_id !== projectId || version.source_id !== source.id || version.status !== "draft") {
+      throw new Error("La versión no está disponible para recibir archivos.");
+    }
+    const invalid = validatePdf(file);
+    if (invalid) throw new Error(invalid);
+    const filePath = `${projectId}/ambiental/${source.id}/${version.id}/${crypto.randomUUID()}.pdf`;
+    const { error: uploadError } = await supabase.storage.from(BUCKET).upload(filePath, file, {
+      contentType: "application/pdf", upsert: false, cacheControl: "3600",
+    });
+    if (uploadError) throw new Error(`No se pudo subir el PDF: ${uploadError.message}`);
+    const { error: linkError } = await supabase.rpc("attach_project_environmental_source_version_file", {
+      p_version_id: version.id, p_file_path: filePath,
+    });
+    if (linkError) throw new Error(`PDF subido, pero no vinculado: ${linkError.message}. Contacta al administrador indicando la versión ${version.id}.`);
+    return filePath;
+  }
+
+  async function uploadExistingVersion(source: Source, version: Version, file: File | undefined) {
+    if (!file || !canEdit || saving || uploadingId) return;
+    setUploadingId(version.id); setError(""); setNotice("");
+    try {
+      await uploadPdf(source, version, file);
+      setNotice(`PDF cargado y vinculado a la versión ${version.version_label}.`);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No fue posible subir el PDF.");
+    } finally { setUploadingId(null); }
+  }
+
+  async function openPdf(source: Source, version: Version) {
+    if (!supabase || !version.file_path) return;
+    const prefix = `${projectId}/ambiental/${source.id}/${version.id}/`;
+    if (!version.file_path.startsWith(prefix) || !version.file_path.toLowerCase().endsWith(".pdf")) {
+      setError("Esta versión tiene una ruta antigua o externa, no un PDF guardado en TRAZA Storage.");
+      return;
+    }
+    const { data, error: signedError } = await supabase.storage.from(BUCKET).createSignedUrl(version.file_path, 60);
+    if (signedError || !data?.signedUrl) { setError(`No se pudo abrir el PDF: ${signedError?.message || "Archivo no disponible"}`); return; }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
   async function createVersion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !canEdit || !activeSource || saving) return;
+    const source = activeSource;
+    const file = selectedPdf;
+    if (file) { const issue = validatePdf(file); if (issue) { setError(issue); return; } }
     setSaving(true); setError(""); setNotice("");
-    const { error: rpcError } = await supabase.rpc("create_project_environmental_source_version", {
-      p_source_id: activeSource.id, p_version_label: versionForm.version_label.trim(),
-      p_file_path: versionForm.file_path.trim() || null,
-      p_external_reference: versionForm.external_reference.trim() || null,
-      p_publication_date: versionForm.publication_date || null,
-      p_effective_from: versionForm.effective_from || null,
-      p_effective_until: versionForm.effective_until || null,
-      p_notes: versionForm.notes.trim() || null,
-    });
-    setSaving(false);
-    if (rpcError) { setError(`No se pudo crear la versión: ${rpcError.message}`); return; }
-    setModal(null); setActiveSource(null); setVersionForm(initialVersion); setNotice("Versión creada como borrador.");
-    await refresh();
+    try {
+      const { data, error: rpcError } = await supabase.rpc("create_project_environmental_source_version", {
+        p_source_id: source.id, p_version_label: versionForm.version_label.trim(),
+        p_file_path: null,
+        p_external_reference: versionForm.external_reference.trim() || null,
+        p_publication_date: versionForm.publication_date || null,
+        p_effective_from: versionForm.effective_from || null,
+        p_effective_until: versionForm.effective_until || null,
+        p_notes: versionForm.notes.trim() || null,
+      });
+      if (rpcError || typeof data !== "string") throw new Error(`No se pudo crear la versión: ${rpcError?.message || "ID no recibido"}`);
+      let message = "Versión creada como borrador.";
+      if (file) {
+        try {
+          await uploadPdf(source, { id: data, source_id: source.id, version_label: versionForm.version_label, status: "draft", file_path: null, external_reference: null, publication_date: null, effective_from: null, effective_until: null, created_at: "" }, file);
+          message = "Versión creada y PDF guardado en Storage.";
+        } catch (e) {
+          message = `Versión creada, pero no se pudo vincular el PDF: ${e instanceof Error ? e.message : "error desconocido"}. Puedes reintentar desde el borrador.`;
+        }
+      }
+      setModal(null); setActiveSource(null); setVersionForm(initialVersion); setSelectedPdf(null);
+      setNotice(message); await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "No fue posible crear la versión."); }
+    finally { setSaving(false); }
   }
   async function activateVersion(version: Version) {
     if (!supabase || !canApprove || saving) return;
@@ -148,12 +215,17 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
           {expanded === source.id && <div className={styles.details}>
             {source.description && <p>{source.description}</p>}
             {source.issuing_authority && <p><strong>Autoridad:</strong> {source.issuing_authority}</p>}
-            <div className={styles.detailsHeading}><strong>Versiones ({revs.length})</strong>{source.source_scope === "project" && canEdit && <button className={styles.secondary} onClick={() => { setActiveSource(source); setVersionForm(initialVersion); setError(""); setModal("version"); }}>+ Agregar versión</button>}</div>
+            <div className={styles.detailsHeading}><strong>Versiones ({revs.length})</strong>{source.source_scope === "project" && canEdit && <button className={styles.secondary} onClick={() => { setActiveSource(source); setVersionForm(initialVersion); setSelectedPdf(null); setError(""); setModal("version"); }}>+ Agregar versión</button>}</div>
             {!revs.length ? <p className={styles.hint}>Aún no hay versiones de este documento.</p> : <div className={styles.versions}>{revs.map(version => <div key={version.id} className={styles.version}>
-              <div><strong>{version.version_label}</strong><span className={version.status === "active" ? styles.active : styles.muted}>{stateLabel[version.status] || version.status}</span><small>{version.file_path ? `Ruta registrada: ${version.file_path}` : version.external_reference ? `Referencia: ${version.external_reference}` : "Sin archivo asociado"}</small></div>
-              {source.source_scope === "project" && version.status === "draft" && canApprove && <button className={styles.secondary} onClick={() => void activateVersion(version)} disabled={saving || (!version.file_path && !version.external_reference)}>Activar</button>}
+              <div><strong>{version.version_label}</strong><span className={version.status === "active" ? styles.active : styles.muted}>{stateLabel[version.status] || version.status}</span><small>{version.file_path ? (version.file_path.startsWith(`${projectId}/ambiental/${source.id}/${version.id}/`) ? "PDF almacenado en TRAZA" : `Ruta antigua (no verificada): ${version.file_path}`) : version.external_reference ? `Referencia: ${version.external_reference}` : "Sin archivo asociado"}</small></div>
+              <div className={styles.versionActions}>
+                {version.file_path?.startsWith(`${projectId}/ambiental/${source.id}/${version.id}/`) && <button type="button" className={styles.secondary} onClick={() => void openPdf(source, version)}>Ver PDF</button>}
+                {version.external_reference && /^https:\/\//i.test(version.external_reference) && <a className={styles.secondary} href={version.external_reference} target="_blank" rel="noopener noreferrer">Ver enlace</a>}
+                {source.source_scope === "project" && version.status === "draft" && canEdit && !version.file_path && <label className={styles.uploadLabel}>{uploadingId === version.id ? "Subiendo…" : "Subir PDF"}<input type="file" accept=".pdf,application/pdf" disabled={!!uploadingId || saving} onChange={e => { void uploadExistingVersion(source, version, e.target.files?.[0]); e.target.value = ""; }}/></label>}
+                {source.source_scope === "project" && version.status === "draft" && canApprove && <button className={styles.secondary} onClick={() => void activateVersion(version)} disabled={saving || !!uploadingId || (!version.file_path?.startsWith(`${projectId}/ambiental/${source.id}/${version.id}/`) && !/^https:\/\//i.test(version.external_reference || ""))}>Activar</button>}
+              </div>
             </div>)}</div>}
-            <p className={styles.hint}>Las rutas registradas no acreditan la existencia de archivos en Storage. La carga de archivos se integrará por separado.</p>
+            <p className={styles.hint}>Los PDF nuevos se guardan en Storage privado. Las rutas antiguas no representan archivos disponibles y deben regularizarse.</p>
           </div>}
         </article>;
       })}</div>}
@@ -170,11 +242,11 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
             <label>Descripción<textarea rows={3} value={sourceForm.description} onChange={e => setSourceForm({ ...sourceForm, description: e.target.value })}/></label>
           </> : <>
             <label>Etiqueta de versión *<input required placeholder="Ej. V1, Rev. 02" value={versionForm.version_label} onChange={e => setVersionForm({ ...versionForm, version_label: e.target.value })}/></label>
-            <label>Ruta existente en Storage (no sube archivos)<input placeholder="documentos/archivo.pdf" value={versionForm.file_path} onChange={e => setVersionForm({ ...versionForm, file_path: e.target.value })}/></label>
+            <label>Subir archivo PDF (opcional)<input type="file" accept=".pdf,application/pdf" onChange={e => setSelectedPdf(e.target.files?.[0] || null)}/><span className={styles.hint}>Máximo 20 MB. El PDF se subirá al bucket privado traza-documents.</span></label>
             <label>Referencia externa<input value={versionForm.external_reference} onChange={e => setVersionForm({ ...versionForm, external_reference: e.target.value })}/></label>
             <div className={styles.dateGrid}><label>Publicación<input type="date" value={versionForm.publication_date} onChange={e => setVersionForm({ ...versionForm, publication_date: e.target.value })}/></label><label>Vigente desde<input type="date" value={versionForm.effective_from} onChange={e => setVersionForm({ ...versionForm, effective_from: e.target.value })}/></label><label>Vigente hasta<input type="date" min={versionForm.effective_from || undefined} value={versionForm.effective_until} onChange={e => setVersionForm({ ...versionForm, effective_until: e.target.value })}/></label></div>
             <label>Notas<textarea rows={3} value={versionForm.notes} onChange={e => setVersionForm({ ...versionForm, notes: e.target.value })}/></label>
-            <p className={styles.hint}>La nueva versión se crea como borrador. La publicación requiere aprobación y un archivo o referencia documental.</p>
+            <p className={styles.hint}>La nueva versión se crea como borrador. Puedes subir el PDF ahora o después. Para activarla necesita un archivo guardado en TRAZA o una referencia HTTPS.</p>
           </>}
           <div className={styles.actions}><button type="button" className={styles.secondary} onClick={() => setModal(null)} disabled={saving}>Cancelar</button><button className={styles.primary} type="submit" disabled={saving}>{saving ? "Guardando…" : modal === "source" ? "Registrar documento" : "Crear borrador"}</button></div>
         </form>

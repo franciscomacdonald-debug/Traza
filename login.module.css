@@ -1,0 +1,203 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  background: #f4f7fb;
+}
+
+.brandPanel {
+  background: #102a43;
+  color: white;
+  padding: 42px 48px;
+  display: flex;
+  flex-direction: column;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand > div:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.brand > div:last-child span {
+  color: #b9c9d8;
+  font-size: 13px;
+}
+
+.brandMark {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: #1f6feb;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 22px;
+  color: white;
+}
+
+.brandCopy {
+  margin: auto 0;
+  max-width: 580px;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  font-weight: 800;
+  font-size: 11px;
+  color: #6f8aa3;
+}
+
+.brandPanel .eyebrow {
+  color: #8cb7e8;
+}
+
+.brandCopy h1 {
+  font-size: clamp(34px, 4vw, 58px);
+  line-height: 1.05;
+  margin: 12px 0 18px;
+}
+
+.brandCopy p {
+  color: #c5d4e2;
+  font-size: 17px;
+  line-height: 1.65;
+  max-width: 520px;
+}
+
+.brandFooter {
+  color: #91a9bf;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.formPanel {
+  display: grid;
+  place-items: center;
+  padding: 34px;
+}
+
+.formBox {
+  width: min(100%, 430px);
+  background: white;
+  border: 1px solid #e3ebf3;
+  border-radius: 20px;
+  box-shadow: 0 18px 50px rgba(16,42,67,.08);
+  padding: 34px;
+}
+
+.formBox h2 {
+  font-size: 31px;
+  margin: 6px 0 8px;
+  color: #102a43;
+}
+
+.subtitle {
+  color: #6f8398;
+  margin: 0 0 26px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #486581;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.form input {
+  width: 100%;
+  border: 1px solid #d7e1eb;
+  border-radius: 11px;
+  padding: 12px 13px;
+  background: #fbfdff;
+  color: #102a43;
+  outline: none;
+}
+
+.form input:focus {
+  border-color: #1f6feb;
+  box-shadow: 0 0 0 3px rgba(31,111,235,.10);
+}
+
+.form button {
+  border: 0;
+  border-radius: 11px;
+  padding: 13px 16px;
+  background: #1f6feb;
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+  margin-top: 3px;
+}
+
+.form button:disabled {
+  opacity: .7;
+  cursor: wait;
+}
+
+.message {
+  border: 1px solid #ffd2d2;
+  background: #fff5f5;
+  color: #b42318;
+  border-radius: 10px;
+  padding: 11px 12px;
+  font-size: 13px;
+}
+
+.help {
+  margin: 20px 0 0;
+  color: #8a9bae;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mobileBrand {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  .page {
+    grid-template-columns: 1fr;
+  }
+
+  .brandPanel {
+    display: none;
+  }
+
+  .formPanel {
+    min-height: 100vh;
+    padding: 22px;
+  }
+
+  .formBox {
+    padding: 28px 24px;
+  }
+
+  .mobileBrand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  .mobileBrand .brandMark {
+    width: 38px;
+    height: 38px;
+    font-size: 18px;
+  }
+}

@@ -1,0 +1,162 @@
+.page {
+  min-height: 100vh;
+  background: #f4f7fb;
+  color: #102a43;
+  padding: 28px 32px 48px;
+}
+
+.loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #f4f7fb;
+  color: #102a43;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 34px;
+}
+
+.topbar button,
+.secondary {
+  border: 1px solid #d9e2ec;
+  background: white;
+  color: #486581;
+  padding: 10px 13px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.hero {
+  margin-bottom: 22px;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  font-size: 11px;
+  font-weight: 800;
+  color: #6f8aa3;
+}
+
+.hero h1 {
+  font-size: 34px;
+  margin: 7px 0 6px;
+}
+
+.hero p {
+  margin: 0;
+  color: #627d98;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.card {
+  background: white;
+  border: 1px solid #e3ebf3;
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(16,42,67,.05);
+  padding: 24px;
+}
+
+.card h2 {
+  margin: 0 0 18px;
+  font-size: 20px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #486581;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.grid input,
+.grid select,
+.grid textarea {
+  border: 1px solid #d7e1eb;
+  border-radius: 11px;
+  padding: 12px 13px;
+  background: #fbfdff;
+  color: #102a43;
+  outline: none;
+}
+
+.full {
+  grid-column: 1 / -1;
+}
+
+.checkboxLabel {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px !important;
+}
+
+.checkboxLabel input {
+  width: auto;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.actions button[type="submit"] {
+  border: 0;
+  background: #1f6feb;
+  color: white;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.error,
+.success {
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.error {
+  background: #fff5f5;
+  border: 1px solid #ffd2d2;
+  color: #b42318;
+}
+
+.success {
+  background: #f3fbf5;
+  border: 1px solid #cfe8d6;
+  color: #2f6b3a;
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: 20px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .full {
+    grid-column: auto;
+  }
+}

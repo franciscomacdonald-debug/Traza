@@ -1,0 +1,211 @@
+.page {
+  min-height: 100vh;
+  background: #f4f7fb;
+  color: #102a43;
+  padding: 28px 32px 48px;
+}
+
+.loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #f4f7fb;
+  color: #102a43;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 36px;
+}
+
+.topbar button {
+  border: 1px solid #d9e2ec;
+  background: white;
+  color: #486581;
+  padding: 10px 13px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.topbar span {
+  font-size: 13px;
+  color: #829ab1;
+  font-weight: 700;
+}
+
+.hero {
+  max-width: 760px;
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  font-size: 11px;
+  font-weight: 800;
+  color: #6f8aa3;
+}
+
+.hero h1 {
+  margin: 7px 0 8px;
+  font-size: 34px;
+}
+
+.hero p {
+  margin: 0;
+  color: #627d98;
+  line-height: 1.6;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1.15fr .85fr;
+  gap: 18px;
+}
+
+.card,
+.successCard {
+  background: white;
+  border: 1px solid #e3ebf3;
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(16,42,67,.05);
+  padding: 24px;
+}
+
+.card h2 {
+  margin: 0 0 20px;
+  font-size: 21px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #486581;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.form input {
+  border: 1px solid #d7e1eb;
+  border-radius: 11px;
+  padding: 12px 13px;
+  background: #fbfdff;
+  color: #102a43;
+  outline: none;
+}
+
+.form button {
+  border: 0;
+  border-radius: 11px;
+  padding: 13px 16px;
+  background: #1f6feb;
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.form button:disabled {
+  opacity: .7;
+  cursor: wait;
+}
+
+.error {
+  background: #fff5f5;
+  border: 1px solid #ffd2d2;
+  color: #b42318;
+  border-radius: 10px;
+  padding: 11px 12px;
+  font-size: 13px;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.steps > div {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.steps > div > span {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #e9f2ff;
+  color: #1f6feb;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+}
+
+.steps > div > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.steps small {
+  color: #829ab1;
+}
+
+.successCard {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-color: #cfe8d6;
+  background: #f7fcf8;
+}
+
+.successIcon {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #d3f9d8;
+  color: #2f9e44;
+  display: grid;
+  place-items: center;
+  font-size: 23px;
+  font-weight: 800;
+}
+
+.successCard span {
+  color: #2f6b3a;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.successCard h2 {
+  margin: 4px 0;
+}
+
+.successCard p {
+  margin: 0;
+  color: #627d98;
+}
+
+@media (max-width: 820px) {
+  .page {
+    padding: 20px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,27 @@
+.container { background: #fff; border: 1px solid #e6edf3; border-radius: 18px; padding: 24px; color: #102a43; }
+.header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
+.header h2 { margin: 0 0 6px; font-size: 22px; }
+.header p { margin: 0; color: #627d98; }
+.header button, .actions button, .actions a, .add button { border: 1px solid #ccd7e2; border-radius: 9px; background: #fff; padding: 10px 12px; cursor: pointer; color: #1b4965; font-weight: 600; text-decoration: none; font-size: 13px; }
+.selectLabel, .add label { display: block; font-size: 13px; color: #486581; font-weight: 700; margin-bottom: 8px; }
+.select { width: 100%; padding: 11px 12px; background: white; border: 1px solid #ccd7e2; border-radius: 9px; color: #102a43; }
+.card { margin-top: 18px; padding: 22px; border: 1px solid #e6edf3; border-radius: 12px; }
+.cardHead { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.cardHead h3 { margin: 0; font-size: 18px; }
+.badge { border-radius: 20px; padding: 5px 12px; background: #eef3fc; color: #315a8b; font-size: 12px; white-space: nowrap; }
+.card p { color: #526d82; line-height: 1.5; }
+.card h4 { margin: 24px 0 12px; }
+.document { border: 1px solid #e4eaf0; border-radius: 10px; padding: 14px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.documentText { display: flex; flex-direction: column; gap: 5px; }
+.documentText span, .documentText small, .muted { color: #627d98; font-size: 13px; }
+.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.actions .danger { color: #b3261e; border-color: #f0d0ce; }
+.add { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e6edf3; }
+.addRow { display: flex; gap: 10px; }
+.addRow select { flex: 1; min-width: 0; }
+.add button { background: #1769d2; color: white; border-color: #1769d2; }
+.add button:disabled { opacity: .5; cursor: not-allowed; }
+.error, .message { padding: 12px; border-radius: 8px; margin: 10px 0; }
+.error { background: #fff1f0; color: #a52219; }
+.message { background: #f0f8f2; color: #24653c; }
+@media (max-width: 700px) { .container { padding: 15px; } .addRow { flex-direction: column; } }

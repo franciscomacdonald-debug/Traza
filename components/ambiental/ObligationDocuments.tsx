@@ -11,6 +11,7 @@ type Source = { id: string; title: string; reference_code: string | null; source
 type Link = { id: string; obligation_id: string; source_id: string; notes: string | null };
 type Evidence = { id: string; obligation_id: string; file_path: string | null; description: string | null; uploaded_by: string | null; created_at: string };
 type EvidenceReview = { id: string; evidence_id: string; decision: "approved" | "observed"; comments: string | null; reviewed_by: string; reviewed_at: string };
+type EvidenceResponse = { id: string; review_id: string; new_evidence_id: string | null; response_text: string; responded_by: string; responded_at: string };
 type Version = { id: string; source_id: string; version_label: string; status: string; file_path: string | null; external_reference: string | null };
 const BUCKET = "traza-documents";
 const statusLabel: Record<string, string> = { pending: "Pendiente", upcoming: "Próxima", in_progress: "En curso", completed: "Cumplida", overdue: "Vencida", not_applicable: "No aplica", cancelled: "Cancelada" };
@@ -22,6 +23,11 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
   const [versions, setVersions] = useState<Version[]>([]);
   const [evidences, setEvidences] = useState<Evidence[]>([]);
   const [reviews, setReviews] = useState<EvidenceReview[]>([]);
+  const [responses, setResponses] = useState<EvidenceResponse[]>([]);
+  const [responseReviewId, setResponseReviewId] = useState<string | null>(null);
+  const [responseText, setResponseText] = useState("");
+  const [responseEvidenceId, setResponseEvidenceId] = useState("");
+  const [responseSaving, setResponseSaving] = useState(false);
   const [reviewEvidenceId, setReviewEvidenceId] = useState<string | null>(null);
   const [reviewDecision, setReviewDecision] = useState<"approved" | "observed">("approved");
   const [reviewComments, setReviewComments] = useState("");
@@ -72,9 +78,18 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
           .in("evidence_id", evidenceRows.map(e => e.id))
           .order("reviewed_at", { ascending: false });
         if (reviewResult.error) setError(reviewResult.error.message);
-        setReviews((reviewResult.data ?? []) as EvidenceReview[]);
-      } else setReviews([]);
-    } else { setEvidences([]); setReviews([]); }
+        const reviewRows = (reviewResult.data ?? []) as EvidenceReview[];
+        setReviews(reviewRows);
+        if (reviewRows.length) {
+          const responseResult = await supabase.from("obligation_evidence_responses")
+            .select("id,review_id,new_evidence_id,response_text,responded_by,responded_at")
+            .in("review_id", reviewRows.map(r => r.id))
+            .order("responded_at", { ascending: false });
+          if (responseResult.error) setError(responseResult.error.message);
+          setResponses((responseResult.data ?? []) as EvidenceResponse[]);
+        } else setResponses([]);
+      } else { setReviews([]); setResponses([]); }
+    } else { setEvidences([]); setReviews([]); setResponses([]); }
     if (sourceRows.length) {
       const revisionResult = await supabase.from("environmental_source_versions")
         .select("id,source_id,version_label,status,file_path,external_reference")
@@ -195,6 +210,25 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
     } finally { setReviewSaving(false); }
   }
 
+  async function submitResponse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !canEdit || !responseReviewId || responseSaving || !responseText.trim()) return;
+    setResponseSaving(true); setError(""); setMessage("");
+    try {
+      const { error: responseError } = await supabase.rpc("respond_obligation_evidence_review", {
+        p_review_id: responseReviewId,
+        p_response_text: responseText.trim(),
+        p_new_evidence_id: responseEvidenceId || null
+      });
+      if (responseError) throw new Error(responseError.message);
+      setMessage("Respuesta registrada. La asesoría debe revisar la subsanación.");
+      setResponseReviewId(null); setResponseText(""); setResponseEvidenceId("");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo registrar la respuesta.");
+    } finally { setResponseSaving(false); }
+  }
+
   const linked = links.filter(l => l.obligation_id === selected);
   const eligible = sources.filter(s => !linked.some(l => l.source_id === s.id));
 
@@ -253,6 +287,38 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
                       {" · "}{new Date(r.reviewed_at).toLocaleString("es-CL")}
                       {" · Revisor: "}{r.reviewed_by}
                       {r.comments && <div>{r.comments}</div>}
+                      {responses.filter(reply => reply.review_id === r.id).map(reply => (
+                        <div key={reply.id} className={styles.responseEntry}>
+                          <strong>Respuesta registrada</strong>
+                          <span>{new Date(reply.responded_at).toLocaleString("es-CL")} · Usuario: {reply.responded_by}</span>
+                          <div>{reply.response_text}</div>
+                          {reply.new_evidence_id && <small>Evidencia nueva asociada: {chosenEvidences.find(item => item.id === reply.new_evidence_id)?.description || reply.new_evidence_id}</small>}
+                        </div>
+                      ))}
+                      {canEdit && r.decision === "observed" && <button type="button" className={styles.responseToggle}
+                        disabled={responseSaving}
+                        onClick={() => { setResponseReviewId(r.id === responseReviewId ? null : r.id); setResponseText(""); setResponseEvidenceId(""); setError(""); }}>
+                        {responseReviewId === r.id ? "Cerrar respuesta" : "Responder observación"}
+                      </button>}
+                      {canEdit && responseReviewId === r.id && r.decision === "observed" &&
+                        <form className={styles.responseForm} onSubmit={event => void submitResponse(event)}>
+                          <label htmlFor={`response-text-${r.id}`}>Respuesta a la observación</label>
+                          <textarea id={`response-text-${r.id}`} value={responseText} rows={3} maxLength={3000} required
+                            placeholder="Indica la medida correctiva realizada y los antecedentes que la respaldan"
+                            disabled={responseSaving} onChange={event => setResponseText(event.target.value)} />
+                          <label htmlFor={`response-evidence-${r.id}`}>Nueva evidencia de la misma obligación (opcional)</label>
+                          <select id={`response-evidence-${r.id}`} value={responseEvidenceId} disabled={responseSaving}
+                            onChange={event => setResponseEvidenceId(event.target.value)}>
+                            <option value="">Sin evidencia nueva asociada</option>
+                            {chosenEvidences.filter(item => item.id !== r.evidence_id).map(item =>
+                              <option key={item.id} value={item.id}>{item.description || item.file_path?.split("/").at(-1) || item.id}</option>)}
+                          </select>
+                          <small>Si necesitas adjuntar un nuevo archivo, súbelo primero en «Agregar evidencia» y luego selecciónalo aquí.</small>
+                          <div className={styles.reviewButtons}>
+                            <button type="submit" disabled={responseSaving || !responseText.trim()}>{responseSaving ? "Guardando…" : "Registrar respuesta"}</button>
+                            <button type="button" disabled={responseSaving} onClick={() => setResponseReviewId(null)}>Cancelar</button>
+                          </div>
+                        </form>}
                     </div>)}
                   </>;
                 })()}

@@ -50,3 +50,12 @@
 .reviewButtons button { padding: 9px 13px; border-radius: 8px; border: 1px solid #ccd7e2; background: white; color: #21455f; font-weight: 700; cursor: pointer; }
 .reviewButtons button:first-child { background: #1769d2; color: white; border-color: #1769d2; }
 .reviewButtons button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Paso 269: respuesta a observaciones */
+.responseEntry { margin: 8px 0 6px 12px; padding: 10px 12px; border-left: 3px solid #76a3ca; background: #f1f7fc; border-radius: 6px; display: flex; flex-direction: column; gap: 5px; color: #21455f; overflow-wrap: anywhere; }
+.responseEntry span, .responseEntry small { font-size: 12px; color: #526d82; }
+.responseToggle { margin-top: 7px; padding: 7px 11px; background: white; color: #1769d2; border: 1px solid #b7cce1; border-radius: 8px; cursor: pointer; font-weight: 600; }
+.responseForm { margin-top: 10px; padding: 12px; background: #f7fafc; border: 1px solid #dbe6ef; border-radius: 9px; display: flex; flex-direction: column; gap: 8px; }
+.responseForm label { font-weight: 700; font-size: 12px; }
+.responseForm textarea, .responseForm select { box-sizing: border-box; width: 100%; background: white; color: #102a43; border: 1px solid #ccd7e2; border-radius: 8px; padding: 10px; font: inherit; }
+.responseForm small { color: #627d98; }

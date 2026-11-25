@@ -10,6 +10,7 @@ type Obligation = { id: string; title: string; description: string | null; statu
 type Source = { id: string; title: string; reference_code: string | null; source_scope: string };
 type Link = { id: string; obligation_id: string; source_id: string; notes: string | null };
 type Evidence = { id: string; obligation_id: string; file_path: string | null; description: string | null; uploaded_by: string | null; created_at: string };
+type EvidenceReview = { id: string; evidence_id: string; decision: "approved" | "observed"; comments: string | null; reviewed_by: string; reviewed_at: string };
 type Version = { id: string; source_id: string; version_label: string; status: string; file_path: string | null; external_reference: string | null };
 const BUCKET = "traza-documents";
 const statusLabel: Record<string, string> = { pending: "Pendiente", upcoming: "Próxima", in_progress: "En curso", completed: "Cumplida", overdue: "Vencida", not_applicable: "No aplica", cancelled: "Cancelada" };
@@ -20,6 +21,11 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
   const [links, setLinks] = useState<Link[]>([]);
   const [versions, setVersions] = useState<Version[]>([]);
   const [evidences, setEvidences] = useState<Evidence[]>([]);
+  const [reviews, setReviews] = useState<EvidenceReview[]>([]);
+  const [reviewEvidenceId, setReviewEvidenceId] = useState<string | null>(null);
+  const [reviewDecision, setReviewDecision] = useState<"approved" | "observed">("approved");
+  const [reviewComments, setReviewComments] = useState("");
+  const [reviewSaving, setReviewSaving] = useState(false);
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidenceDescription, setEvidenceDescription] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -30,6 +36,7 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const canEdit = accessLevel === "edit" || accessLevel === "admin";
+  const canReview = accessLevel === "approve" || accessLevel === "admin";
 
   const load = useCallback(async () => {
     if (!supabase) { setError("Falta configurar Supabase."); setLoading(false); return; }
@@ -57,8 +64,17 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
         .in("obligation_id", obligationRows.map(o => o.id))
         .order("created_at", { ascending: false });
       if (res.error) setError(res.error.message);
-      setEvidences((res.data ?? []) as Evidence[]);
-    } else setEvidences([]);
+      const evidenceRows = (res.data ?? []) as Evidence[];
+      setEvidences(evidenceRows);
+      if (evidenceRows.length) {
+        const reviewResult = await supabase.from("obligation_evidence_reviews")
+          .select("id,evidence_id,decision,comments,reviewed_by,reviewed_at")
+          .in("evidence_id", evidenceRows.map(e => e.id))
+          .order("reviewed_at", { ascending: false });
+        if (reviewResult.error) setError(reviewResult.error.message);
+        setReviews((reviewResult.data ?? []) as EvidenceReview[]);
+      } else setReviews([]);
+    } else { setEvidences([]); setReviews([]); }
     if (sourceRows.length) {
       const revisionResult = await supabase.from("environmental_source_versions")
         .select("id,source_id,version_label,status,file_path,external_reference")
@@ -157,6 +173,28 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
+  async function submitReview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !canReview || !reviewEvidenceId || reviewSaving) return;
+    if (reviewDecision === "observed" && !reviewComments.trim()) {
+      setError("Para observar una evidencia debes escribir el motivo."); return;
+    }
+    setReviewSaving(true); setError(""); setMessage("");
+    try {
+      const { error: reviewError } = await supabase.rpc("review_obligation_evidence", {
+        p_evidence_id: reviewEvidenceId,
+        p_decision: reviewDecision,
+        p_comments: reviewComments.trim() || null
+      });
+      if (reviewError) throw new Error(reviewError.message);
+      setMessage(reviewDecision === "approved" ? "Revisión aprobada y registrada." : "Observación registrada.");
+      setReviewEvidenceId(null); setReviewComments(""); setReviewDecision("approved");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo registrar la revisión.");
+    } finally { setReviewSaving(false); }
+  }
+
   const linked = links.filter(l => l.obligation_id === selected);
   const eligible = sources.filter(s => !linked.some(l => l.source_id === s.id));
 
@@ -197,7 +235,51 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
                   <button type="button" onClick={() => void openEvidence(e, false)}>Ver</button>
                   <button type="button" onClick={() => void openEvidence(e, true)}>Descargar</button>
                 </>}
+                {canReview && <button type="button" disabled={reviewSaving}
+                  onClick={() => { setReviewEvidenceId(e.id); setReviewDecision("approved"); setReviewComments(""); setError(""); }}>
+                  Revisar evidencia
+                </button>}
               </div>
+              <div className={styles.reviewHistory}>
+                {(() => {
+                  const history = reviews.filter(r => r.evidence_id === e.id);
+                  if (!history.length) return <span className={styles.pendingReview}>Sin revisión de asesoría</span>;
+                  return <>
+                    <span className={history[0].decision === "approved" ? styles.approvedReview : styles.observedReview}>
+                      {history[0].decision === "approved" ? "Última revisión: Aprobada" : "Última revisión: Observada"}
+                    </span>
+                    {history.map(r => <div key={r.id} className={styles.reviewEntry}>
+                      <strong>{r.decision === "approved" ? "Aprobada" : "Observada"}</strong>
+                      {" · "}{new Date(r.reviewed_at).toLocaleString("es-CL")}
+                      {" · Revisor: "}{r.reviewed_by}
+                      {r.comments && <div>{r.comments}</div>}
+                    </div>)}
+                  </>;
+                })()}
+              </div>
+              {canReview && reviewEvidenceId === e.id && <form className={styles.reviewForm}
+                onSubmit={event => void submitReview(event)}>
+                <strong>Revisión por la asesoría</strong>
+                <label htmlFor={`decision-${e.id}`}>Resultado de la revisión</label>
+                <select id={`decision-${e.id}`} value={reviewDecision} disabled={reviewSaving}
+                  onChange={event => setReviewDecision(event.target.value as "approved" | "observed")}>
+                  <option value="approved">Aprobar evidencia</option>
+                  <option value="observed">Observar evidencia</option>
+                </select>
+                <label htmlFor={`comments-${e.id}`}>Observaciones {reviewDecision === "observed" ? "(obligatorias)" : "(opcionales)"}</label>
+                <textarea id={`comments-${e.id}`} value={reviewComments}
+                  onChange={event => setReviewComments(event.target.value)}
+                  rows={3} maxLength={2000} disabled={reviewSaving}
+                  required={reviewDecision === "observed"}
+                  placeholder="Indica el fundamento de la revisión" />
+                <div className={styles.reviewButtons}>
+                  <button type="submit" disabled={reviewSaving || (reviewDecision === "observed" && !reviewComments.trim())}>
+                    {reviewSaving ? "Guardando…" : "Registrar revisión"}
+                  </button>
+                  <button type="button" disabled={reviewSaving} onClick={() => setReviewEvidenceId(null)}>Cancelar</button>
+                </div>
+                <small>La revisión queda en el historial. No cambia automáticamente el estado de la obligación.</small>
+              </form>}
             </div>
           ))}
           {canEdit && <form onSubmit={e => void uploadEvidence(e)} className={styles.evidenceForm}>

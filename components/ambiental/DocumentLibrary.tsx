@@ -162,6 +162,26 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
+  async function downloadPdf(source: Source, version: Version) {
+    if (!supabase || !version.file_path) return;
+    const prefix = `${projectId}/ambiental/${source.id}/${version.id}/`;
+    if (!version.file_path.startsWith(prefix) || !version.file_path.toLowerCase().endsWith(".pdf")) {
+      setError("Esta versión no dispone de un PDF válido en TRAZA Storage.");
+      return;
+    }
+    setError("");
+    const { data, error: downloadError } = await supabase.storage.from(BUCKET).download(version.file_path);
+    if (downloadError || !data) { setError(`No se pudo descargar el PDF: ${downloadError?.message || "Archivo no disponible"}`); return; }
+    const url = URL.createObjectURL(data);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${source.reference_code || source.title}_${version.version_label}.pdf`.replace(/[^a-zA-Z0-9._-]/g, "_");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function createVersion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !canEdit || !activeSource || saving) return;
@@ -183,20 +203,7 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
       let message = "Versión creada como borrador.";
       if (file) {
         try {
-  await uploadPdf(source, {
-  id: data,
-  source_id: source.id,
-  version_label: versionForm.version_label,
-  status: "draft",
-  file_path: null,
-  external_reference: null,
-  publication_date: null,
-  effective_from: null,
-  effective_until: null,
-  created_at: "",
-  notes: null
-}, file);
-
+          await uploadPdf(source, { id: data, source_id: source.id, version_label: versionForm.version_label, status: "draft", file_path: null, external_reference: null, publication_date: null, effective_from: null, effective_until: null, created_at: "", notes: null }, file);
           message = "Versión creada y PDF guardado en Storage.";
         } catch (e) {
           message = `Versión creada, pero no se pudo vincular el PDF: ${e instanceof Error ? e.message : "error desconocido"}. Puedes reintentar desde el borrador.`;
@@ -296,6 +303,7 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
               <div className={styles.versionActions}>
                 {source.source_scope === "project" && version.status === "draft" && canEdit && <button type="button" className={styles.secondary} onClick={() => openDraftEditor(source, version)}>Editar borrador</button>}
                 {version.file_path?.startsWith(`${projectId}/ambiental/${source.id}/${version.id}/`) && <button type="button" className={styles.secondary} onClick={() => void openPdf(source, version)}>Ver PDF</button>}
+                {version.file_path?.startsWith(`${projectId}/ambiental/${source.id}/${version.id}/`) && <button type="button" className={styles.secondary} onClick={() => void downloadPdf(source, version)}>Descargar PDF</button>}
                 {version.external_reference && /^https:\/\//i.test(version.external_reference) && <a className={styles.secondary} href={version.external_reference} target="_blank" rel="noopener noreferrer">Ver enlace</a>}
                 {source.source_scope === "project" && version.status === "draft" && canEdit && !version.file_path && <label className={styles.uploadLabel}>{uploadingId === version.id ? "Subiendo…" : "Subir PDF"}<input type="file" accept=".pdf,application/pdf" disabled={!!uploadingId || saving} onChange={e => { void uploadExistingVersion(source, version, e.target.files?.[0]); e.target.value = ""; }}/></label>}
                 {source.source_scope === "project" && version.status === "draft" && canApprove && <button className={styles.secondary} onClick={() => void activateVersion(version)} disabled={saving || !!uploadingId || (!version.file_path?.startsWith(`${projectId}/ambiental/${source.id}/${version.id}/`) && !/^https:\/\//i.test(version.external_reference || ""))}>Activar</button>}
@@ -315,8 +323,11 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
                   const version = revs.find(v => v.id === event.entity_id);
                   return <div className={styles.historyItem} key={event.id}>
                     <strong>{describeAudit(event)} · {version?.version_label || "Versión"}</strong>
-                    <small>{new Date(event.created_at).toLocaleString("es-CL")} · Usuario: {event.user_id || "Sin identificación"}</small>
-                    {event.action === "environmental_source_version_draft_updated" && <small>Metadatos del borrador actualizados</small>}
+                    <div className={styles.auditMeta}>
+                      <span><b>Fecha y hora:</b> {new Date(event.created_at).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "medium" })}</span>
+                      <span><b>Usuario (ID):</b> {event.user_id || "No registrado"}</span>
+                      {event.action === "environmental_source_version_draft_updated" && <span><b>Detalle:</b> Metadatos del borrador actualizados</span>}
+                    </div>
                   </div>;
                 })}
             </div>}
@@ -348,4 +359,4 @@ export default function DocumentLibrary({ projectId, projectName, accessLevel }:
       </section>
     </div>}
   </section>;
-} 
+}

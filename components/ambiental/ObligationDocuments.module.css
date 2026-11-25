@@ -25,3 +25,12 @@
 .error { background: #fff1f0; color: #a52219; }
 .message { background: #f0f8f2; color: #24653c; }
 @media (max-width: 700px) { .container { padding: 15px; } .addRow { flex-direction: column; } }
+
+/* Paso 251: evidencias de obligaciones */
+.evidences { margin-top: 28px; border-top: 1px solid #e6edf3; padding-top: 4px; }
+.evidenceForm { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; padding: 18px; background: #f7fafc; border: 1px solid #dae4ed; border-radius: 12px; }
+.evidenceForm h4 { margin: 0 0 4px; }
+.evidenceForm label { font-size: 13px; color: #486581; font-weight: 700; }
+.evidenceForm input, .evidenceForm textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #ccd7e2; border-radius: 8px; background: white; color: #102a43; font: inherit; }
+.evidenceForm button { align-self: flex-start; padding: 10px 15px; background: #1769d2; border: 1px solid #1769d2; color: white; border-radius: 9px; font-weight: 700; cursor: pointer; }
+.evidenceForm button:disabled { opacity: .55; cursor: not-allowed; }

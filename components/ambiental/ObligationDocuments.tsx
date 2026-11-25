@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import { supabase } from "@/lib/supabase";
 import type { AccessLevel } from "@/lib/modules";
 import styles from "./ObligationDocuments.module.css";
@@ -8,6 +9,7 @@ import styles from "./ObligationDocuments.module.css";
 type Obligation = { id: string; title: string; description: string | null; status: string; due_date: string | null };
 type Source = { id: string; title: string; reference_code: string | null; source_scope: string };
 type Link = { id: string; obligation_id: string; source_id: string; notes: string | null };
+type Evidence = { id: string; obligation_id: string; file_path: string | null; description: string | null; uploaded_by: string | null; created_at: string };
 type Version = { id: string; source_id: string; version_label: string; status: string; file_path: string | null; external_reference: string | null };
 const BUCKET = "traza-documents";
 const statusLabel: Record<string, string> = { pending: "Pendiente", upcoming: "Próxima", in_progress: "En curso", completed: "Cumplida", overdue: "Vencida", not_applicable: "No aplica", cancelled: "Cancelada" };
@@ -17,6 +19,10 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
   const [sources, setSources] = useState<Source[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
   const [versions, setVersions] = useState<Version[]>([]);
+  const [evidences, setEvidences] = useState<Evidence[]>([]);
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidenceDescription, setEvidenceDescription] = useState("");
+  const [uploading, setUploading] = useState(false);
   const [selected, setSelected] = useState<string>("");
   const [sourceToAdd, setSourceToAdd] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -45,6 +51,14 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
     setSources(sourceRows);
     setLinks((joined.data ?? []) as Link[]);
     setSelected(previous => obligationRows.some(o => o.id === previous) ? previous : obligationRows[0]?.id ?? "");
+    if (obligationRows.length) {
+      const res = await supabase.from("obligation_evidence")
+        .select("id,obligation_id,file_path,description,uploaded_by,created_at")
+        .in("obligation_id", obligationRows.map(o => o.id))
+        .order("created_at", { ascending: false });
+      if (res.error) setError(res.error.message);
+      setEvidences((res.data ?? []) as Evidence[]);
+    } else setEvidences([]);
     if (sourceRows.length) {
       const revisionResult = await supabase.from("environmental_source_versions")
         .select("id,source_id,version_label,status,file_path,external_reference")
@@ -88,6 +102,61 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
   }
 
   const chosen = obligations.find(o => o.id === selected);
+  const chosenEvidences = evidences.filter(e => e.obligation_id === selected);
+  const MAX_BYTES = 10 * 1024 * 1024;
+  const acceptedMime: Record<string, string> = {
+    "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png"
+  };
+
+  async function uploadEvidence(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !canEdit || !selected || !evidenceFile || uploading) return;
+    setError(""); setMessage("");
+    const extension = acceptedMime[evidenceFile.type];
+    if (!extension) { setError("Solo se permiten archivos PDF, JPG o PNG."); return; }
+    if (evidenceFile.size === 0 || evidenceFile.size > MAX_BYTES) {
+      setError("El archivo debe tener contenido y pesar como máximo 10 MB."); return;
+    }
+    setUploading(true);
+    // Se usa un nombre único y no se permite sobrescribir archivos.
+    const objectPath = `${projectId}/evidencias/${selected}/${crypto.randomUUID()}.${extension}`;
+    try {
+      const { error: uploadError } = await supabase.storage.from(BUCKET)
+        .upload(objectPath, evidenceFile, { contentType: evidenceFile.type, upsert: false });
+      if (uploadError) throw new Error(`No se pudo subir el archivo: ${uploadError.message}`);
+      const { error: rpcError } = await supabase.rpc("register_obligation_evidence", {
+        p_obligation_id: selected,
+        p_file_path: objectPath,
+        p_description: evidenceDescription.trim() || null
+      });
+      if (rpcError) throw new Error(`El archivo se subió, pero no se pudo registrar la evidencia: ${rpcError.message}. Comunica este error al administrador para revisar el archivo sin registrar.`);
+      setEvidenceFile(null);
+      setEvidenceDescription("");
+      const fileInput = document.getElementById("traza-evidence-file") as HTMLInputElement | null;
+      if (fileInput) fileInput.value = "";
+      setMessage("Evidencia registrada correctamente.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ocurrió un error durante la carga.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function openEvidence(evidence: Evidence, download: boolean) {
+    if (!supabase || !evidence.file_path) return;
+    setError("");
+    const filename = evidence.file_path.split("/").at(-1) || "evidencia";
+    const { data, error: urlError } = await supabase.storage.from(BUCKET).createSignedUrl(
+      evidence.file_path, 60, download ? { download: filename } : undefined
+    );
+    if (urlError || !data?.signedUrl) {
+      setError(urlError?.message || "No se pudo obtener el archivo."); return;
+    }
+    // Se abre una URL temporal privada, nunca un enlace público permanente.
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
   const linked = links.filter(l => l.obligation_id === selected);
   const eligible = sources.filter(s => !linked.some(l => l.source_id === s.id));
 
@@ -114,6 +183,35 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
             {canEdit && <button type="button" className={styles.danger} disabled={saving} onClick={() => void removeLink(link)}>Desvincular</button>}
           </div></div>;
         })}
+        <section className={styles.evidences} aria-label="Evidencias de cumplimiento">
+          <h4>Evidencias de cumplimiento</h4>
+          <p className={styles.muted}>Fotografías y certificados asociados a esta obligación. Cargar una evidencia no marca la obligación como cumplida ni supone su aprobación.</p>
+          {chosenEvidences.length === 0 ? <p className={styles.muted}>Todavía no se han registrado evidencias.</p> : chosenEvidences.map(e => (
+            <div className={styles.document} key={e.id}>
+              <div className={styles.documentText}>
+                <strong>{e.description || e.file_path?.split("/").at(-1) || "Evidencia"}</strong>
+                <span>{new Date(e.created_at).toLocaleString("es-CL")} · Registro de evidencia</span>
+              </div>
+              <div className={styles.actions}>
+                {e.file_path && <>
+                  <button type="button" onClick={() => void openEvidence(e, false)}>Ver</button>
+                  <button type="button" onClick={() => void openEvidence(e, true)}>Descargar</button>
+                </>}
+              </div>
+            </div>
+          ))}
+          {canEdit && <form onSubmit={e => void uploadEvidence(e)} className={styles.evidenceForm}>
+            <h4>Agregar evidencia</h4>
+            <label htmlFor="traza-evidence-file">Archivo PDF, JPG o PNG (máx. 10 MB)</label>
+            <input id="traza-evidence-file" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required
+              onChange={e => setEvidenceFile(e.target.files?.[0] || null)} disabled={uploading} />
+            <label htmlFor="traza-evidence-description">Descripción</label>
+            <textarea id="traza-evidence-description" value={evidenceDescription}
+              onChange={e => setEvidenceDescription(e.target.value)} maxLength={1000} rows={3}
+              placeholder="Ej.: Certificado de disposición final de residuos, noviembre 2026" disabled={uploading} />
+            <button type="submit" disabled={uploading || !evidenceFile}>{uploading ? "Subiendo evidencia…" : "Subir evidencia"}</button>
+          </form>}
+        </section>
         {canEdit && <div className={styles.add}><label htmlFor="doc-add">Vincular otro documento</label><div className={styles.addRow}>
           <select id="doc-add" className={styles.select} value={sourceToAdd} onChange={e => setSourceToAdd(e.target.value)}>
             <option value="">Selecciona un documento</option>

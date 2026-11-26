@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import type { AccessLevel } from "@/lib/modules";
 import styles from "./EnvironmentalInspections.module.css";
 import InspectionPhotos from "./InspectionPhotos";
+import InspectionFindings from "./InspectionFindings";
 
 type InspectionStatus = "draft" | "in_progress" | "completed" | "cancelled";
 type Inspection = {
@@ -32,6 +33,7 @@ export default function EnvironmentalInspections({ projectId, accessLevel }: { p
   const [userId, setUserId] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [photosForId, setPhotosForId] = useState<string | null>(null);
+  const [findingsForId, setFindingsForId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(todayLocal);
   const [generalNotes, setGeneralNotes] = useState("");
@@ -193,9 +195,11 @@ export default function EnvironmentalInspections({ projectId, accessLevel }: { p
                     {ownEditable && item.status === "in_progress" &&
                       <button type="button" className={styles.button} onClick={() => void changeStatus(item, "completed")} disabled={saving}>Completar</button>}
                     <button type="button" className={`${styles.button} ${styles.secondary}`} onClick={() => setPhotosForId((current) => current === item.id ? null : item.id)}>{photosForId === item.id ? "Cerrar fotos" : "Fotografías"}</button>
+                    <button type="button" className={`${styles.button} ${styles.secondary}`} onClick={() => setFindingsForId((current) => current === item.id ? null : item.id)}>{findingsForId === item.id ? "Cerrar hallazgos" : "Hallazgos"}</button>
                   </div></td>
                   </tr>
                   {photosForId === item.id && <tr><td colSpan={5}><InspectionPhotos key={item.id} projectId={projectId} inspectionId={item.id} inspectorUserId={item.inspector_user_id} inspectionStatus={item.status} accessLevel={accessLevel} /></td></tr>}
+                  {findingsForId === item.id && <tr><td colSpan={5}><InspectionFindings key={item.id} projectId={projectId} inspectionId={item.id} accessLevel={accessLevel} /></td></tr>}
                 </Fragment>;
               })}</tbody>
             </table>

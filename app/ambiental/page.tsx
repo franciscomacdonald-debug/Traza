@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
@@ -9,13 +9,7 @@ import ModuleGate from "@/components/ModuleGate";
 import type { AccessLevel } from "@/lib/modules";
 import DocumentLibrary from "@/components/ambiental/DocumentLibrary";
 import ObligationDocuments from "@/components/ambiental/ObligationDocuments";
-
-type Metric = {
-  title: string;
-  value: string;
-  detail: string;
-  tone: "blue" | "green" | "amber" | "red" | "gray";
-};
+import EnvironmentalOverview from "@/components/ambiental/EnvironmentalOverview";
 
 type Profile = {
   id: string;
@@ -62,15 +56,6 @@ type Project = {
 type ProjectAccess = Project & {
   membership: ProjectMember;
 };
-
-const baseMetrics: Metric[] = [
-  { title: "Alertas", value: "6", detail: "2 críticas", tone: "red" },
-  { title: "Hallazgos", value: "3", detail: "2 en gestión", tone: "amber" },
-  { title: "Inspecciones", value: "12", detail: "este mes", tone: "blue" },
-  { title: "Obligaciones", value: "4", detail: "2 próximas", tone: "amber" },
-  { title: "Permisos", value: "8", detail: "1 próximo a vencer", tone: "amber" },
-  { title: "Cierre mensual", value: "Septiembre", detail: "En revisión", tone: "blue" },
-];
 
 const nav = [
   ["Inicio TRAZA", "⌂"],
@@ -315,26 +300,6 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
       window.clearInterval(interval);
     };
   }, [selectedProjectId, user?.id]);
-
-  const dashboardMetrics = useMemo(
-    () =>
-      baseMetrics.map((metric) =>
-        metric.title === "Alertas"
-          ? {
-              ...metric,
-              value: String(unreadAlertCount),
-              detail: `${criticalAlertCount} críticas`,
-            }
-          : metric
-      ),
-    [unreadAlertCount, criticalAlertCount]
-  );
-
-  const statusText = useMemo(
-    () =>
-      `${unreadAlertCount} alertas no leídas · ${criticalAlertCount} críticas · resto de indicadores aún en integración`,
-    [unreadAlertCount, criticalAlertCount]
-  );
 
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) ?? null;
@@ -582,97 +547,17 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
         ) : active === "Obligaciones" ? (
           <ObligationDocuments projectId={authorizedProjectId} accessLevel={accessLevel} />
         ) : (<>
-        <section className={styles.statusPanel}>
-          <div>
-            <span className={styles.statusLabel}>
-              Estado ambiental del proyecto
-            </span>
-            <div className={styles.statusTitle}>
-              <span className={styles.statusDot} />
-              ATENCIÓN
-            </div>
-            <p>{statusText}</p>
-          </div>
-          <button className={styles.primaryButton}>Ver alertas</button>
-        </section>
-
-        <section className={styles.metrics}>
-          {dashboardMetrics.map((metric) => (
-            <article key={metric.title} className={styles.metricCard}>
-              <div className={`${styles.tone} ${styles[metric.tone]}`} />
-              <span>{metric.title}</span>
-              <strong>{metric.value}</strong>
-              <small>{metric.detail}</small>
-            </article>
-          ))}
-        </section>
-
-        <section className={styles.lowerGrid}>
-          <article className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <div>
-                <span className={styles.eyebrow}>Seguimiento</span>
-                <h2>Actividad reciente</h2>
-              </div>
-              <button>Ver todo</button>
-            </div>
-
-            <div className={styles.activity}>
-              <div>
-                <span className={styles.ok}>✓</span>
-                <p>
-                  <strong>Inspección ambiental completada</strong>
-                  <small>Registro actualizado</small>
-                </p>
-                <time>Hoy</time>
-              </div>
-              <div>
-                <span className={styles.warn}>!</span>
-                <p>
-                  <strong>Hallazgo N°024 actualizado</strong>
-                  <small>En gestión por contratista</small>
-                </p>
-                <time>Hoy</time>
-              </div>
-              <div>
-                <span className={styles.info}>↗</span>
-                <p>
-                  <strong>Evidencia incorporada</strong>
-                  <small>Fotografía asociada a inspección</small>
-                </p>
-                <time>Ayer</time>
-              </div>
-              <div>
-                <span className={styles.warn}>!</span>
-                <p>
-                  <strong>Permiso próximo a vencer</strong>
-                  <small>Revisión requerida</small>
-                </p>
-                <time>2 días</time>
-              </div>
-            </div>
-          </article>
-
-          <article className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <div>
-                <span className={styles.eyebrow}>Período actual</span>
-                <h2>Cierre mensual</h2>
-              </div>
-            </div>
-
-            <div className={styles.closureBox}>
-              <span>Septiembre 2026</span>
-              <strong>En revisión</strong>
-              <div className={styles.progress}>
-                <i />
-              </div>
-              <small>
-                Los indicadores ambientales todavía son datos de demostración.
-              </small>
-            </div>
-          </article>
-        </section>
+        <EnvironmentalOverview
+          projectId={authorizedProjectId}
+          unreadAlertCount={unreadAlertCount}
+          criticalAlertCount={criticalAlertCount}
+          onOpenNotifications={() => {
+            setActive("Obligaciones");
+            window.location.hash = "traza-notificaciones";
+            window.dispatchEvent(new Event("traza:open-notifications"));
+          }}
+          onOpenObligations={() => setActive("Obligaciones")}
+        />
 
         </>)}
         <footer className={styles.note}>

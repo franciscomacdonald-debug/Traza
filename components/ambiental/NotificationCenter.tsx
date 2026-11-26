@@ -117,6 +117,7 @@ export default function NotificationCenter({ projectId, onSelectObligation }: {
       const { error: rpcError } = await supabase.rpc("mark_project_alert_read", { p_alert_id: id });
       if (rpcError) throw rpcError;
       setReadIds(previous => previous.includes(id) ? previous : [...previous, id]);
+      window.dispatchEvent(new Event("traza:notification-read"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo marcar como leída.");
     } finally { setMarkingId(null); }

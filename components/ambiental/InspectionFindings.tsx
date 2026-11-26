@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { AccessLevel } from "@/lib/modules";
 import styles from "./InspectionFindings.module.css";
+import FindingFollowUp from "./FindingFollowUp";
 
 type Origin = "aif" | "contractor_internal";
 type Classification = "non_compliance" | "observation" | "recommendation";
@@ -27,6 +28,7 @@ export default function InspectionFindings({ projectId, inspectionId, accessLeve
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [openFollowUpId, setOpenFollowUpId] = useState<string | null>(null);
   const canEdit = accessLevel === "edit" || accessLevel === "approve" || accessLevel === "admin";
 
   const load = useCallback(async () => {
@@ -132,7 +134,7 @@ export default function InspectionFindings({ projectId, inspectionId, accessLeve
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {success && <p role="status" className={styles.success}>{success}</p>}
     <div className={styles.list}>{loading ? <p className={styles.hint}>Cargando…</p> : rows.length === 0 ? <p className={styles.hint}>No hay hallazgos asociados a esta inspección.</p> : rows.map(row =>
-      <article key={row.id} className={styles.item}><strong>{row.title}</strong><span>{classificationNames[row.classification]} · {statusNames[row.status] || row.status} · {new Date(row.created_at).toLocaleDateString("es-CL")}</span>{row.due_date && <span>Plazo: {row.due_date}</span>}</article>
+      <article key={row.id} className={styles.item}><strong>{row.title}</strong><span>{classificationNames[row.classification]} · {statusNames[row.status] || row.status} · {new Date(row.created_at).toLocaleDateString("es-CL")}</span>{row.due_date && <span>Plazo: {row.due_date}</span>}<button type="button" className={`${styles.button} ${styles.secondary}`} onClick={() => setOpenFollowUpId(id => id === row.id ? null : row.id)}>{openFollowUpId === row.id ? "Cerrar seguimiento" : "Seguimiento y cierre"}</button>{openFollowUpId === row.id && <FindingFollowUp findingId={row.id} projectId={projectId} accessLevel={accessLevel} onUpdated={() => void load()} />}</article>
     )}</div>
   </section>;
 }

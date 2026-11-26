@@ -10,6 +10,7 @@ import type { AccessLevel } from "@/lib/modules";
 import DocumentLibrary from "@/components/ambiental/DocumentLibrary";
 import ObligationDocuments from "@/components/ambiental/ObligationDocuments";
 import EnvironmentalOverview from "@/components/ambiental/EnvironmentalOverview";
+import EnvironmentalInspections from "@/components/ambiental/EnvironmentalInspections";
 
 type Profile = {
   id: string;
@@ -546,6 +547,8 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
           <DocumentLibrary projectId={authorizedProjectId} projectName={selectedProject.name} accessLevel={accessLevel} />
         ) : active === "Obligaciones" ? (
           <ObligationDocuments projectId={authorizedProjectId} accessLevel={accessLevel} />
+        ) : active === "Inspecciones" ? (
+          <EnvironmentalInspections projectId={authorizedProjectId} accessLevel={accessLevel} />
         ) : (<>
         <EnvironmentalOverview
           projectId={authorizedProjectId}

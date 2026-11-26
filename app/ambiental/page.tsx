@@ -249,53 +249,71 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
     return () => subscription.unsubscribe();
   }, [router, authorizedProjectId]);
 
+  // Contador individual: solo alertas ambientales activas NO leídas por este usuario.
   useEffect(() => {
-    if (!supabase || !selectedProjectId) {
+    if (!supabase || !selectedProjectId || !user?.id) {
       setUnreadAlertCount(0);
       setCriticalAlertCount(0);
       return;
     }
 
-    const client = supabase!;
+    const client = supabase;
     let cancelled = false;
 
-    async function loadRealAlerts() {
-      const [
-        { data: unreadData, error: unreadError },
-        { count: criticalCount, error: criticalError },
-      ] = await Promise.all([
-        client.rpc("get_unread_alert_count", {
-          p_project_id: selectedProjectId,
-        }),
-        client
-          .from("project_alerts")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", selectedProjectId)
-          .eq("status", "unread")
-          .eq("priority", "critical"),
-      ]);
+    async function loadIndividualAlerts() {
+      const { data: alertRows, error: alertError } = await client
+        .from("project_alerts")
+        .select("id,priority")
+        .eq("project_id", selectedProjectId)
+        .in("alert_type", ["obligation_due", "obligation_overdue"])
+        .in("status", ["unread", "read"]);
 
       if (cancelled) return;
-
-      if (unreadError || criticalError) {
-        setDataError(
-          unreadError?.message ||
-            criticalError?.message ||
-            "No fue posible cargar las alertas reales."
-        );
+      if (alertError) {
+        setDataError(alertError.message);
         return;
       }
 
-      setUnreadAlertCount(Number(unreadData ?? 0));
-      setCriticalAlertCount(criticalCount ?? 0);
+      const visible = alertRows ?? [];
+      if (visible.length === 0) {
+        setUnreadAlertCount(0);
+        setCriticalAlertCount(0);
+        return;
+      }
+
+      const { data: readRows, error: readError } = await client
+        .from("project_alert_user_reads")
+        .select("alert_id")
+        .eq("user_id", user.id)
+        .in("alert_id", visible.map((a) => a.id));
+
+      if (cancelled) return;
+      if (readError) {
+        setDataError(readError.message);
+        return;
+      }
+
+      const readSet = new Set((readRows ?? []).map((r) => r.alert_id));
+      const pending = visible.filter((a) => !readSet.has(a.id));
+      setUnreadAlertCount(pending.length);
+      setCriticalAlertCount(pending.filter((a) => a.priority === "critical").length);
     }
 
-    loadRealAlerts();
+    void loadIndividualAlerts();
+    // Actualización inmediata al marcar una notificación como leída.
+    const onRead = () => { void loadIndividualAlerts(); };
+    window.addEventListener("traza:notification-read", onRead);
+    // También actualizar al volver a la pestaña o tras cambios externos.
+    window.addEventListener("focus", onRead);
+    const interval = window.setInterval(onRead, 30000);
 
     return () => {
       cancelled = true;
+      window.removeEventListener("traza:notification-read", onRead);
+      window.removeEventListener("focus", onRead);
+      window.clearInterval(interval);
     };
-  }, [selectedProjectId]);
+  }, [selectedProjectId, user?.id]);
 
   const dashboardMetrics = useMemo(
     () =>

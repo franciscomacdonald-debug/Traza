@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import type { AccessLevel } from "@/lib/modules";
 import styles from "./ObligationDocuments.module.css";
 import ObligationDashboard from "./ObligationDashboard";
+import ObligationAlerts from "./ObligationAlerts";
 
 type Obligation = { id: string; title: string; description: string | null; status: string; due_date: string | null };
 type Source = { id: string; title: string; reference_code: string | null; source_scope: string };
@@ -272,6 +273,7 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
     {message && <div className={styles.message} role="status">{message}</div>}
     {loading ? <p>Cargando obligaciones…</p> : obligations.length === 0 ? <p>Aún no existen obligaciones ambientales en este proyecto.</p> : <>
       <ObligationDashboard obligations={obligations} onSelect={setSelected} selectedId={selected} />
+      <ObligationAlerts projectId={projectId} obligations={obligations} onSelect={setSelected} />
       <label className={styles.selectLabel} htmlFor="obligation-select">Seleccionar obligación</label>
       <select id="obligation-select" value={selected} onChange={e => setSelected(e.target.value)} className={styles.select}>
         {obligations.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}

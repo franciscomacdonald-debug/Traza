@@ -1,0 +1,12 @@
+.dashboard{margin:6px 0 25px;padding:20px;border:1px solid #dbe5ef;border-radius:13px;background:#f8fafc;color:#183954}
+.heading{display:flex;justify-content:space-between;align-items:start;gap:18px;flex-wrap:wrap;margin-bottom:17px}
+.heading h3{font-size:17px;margin:0 0 6px}.heading p,.note,.disclaimer{margin:0;font-size:12px;color:#627d98}.note{max-width:260px}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.metric{display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:16px;text-align:left;min-height:104px;background:white;border:1px solid #dae4ed;border-radius:10px;padding:13px;color:#24455f;cursor:pointer}
+.metric:hover{border-color:#7ba7d6}.metric span{font-size:12px;color:#526d82}.metric strong{font-size:29px;color:#102a43}.activeMetric{outline:2px solid #1769d2;border-color:#1769d2}
+.progressHead{display:flex;justify-content:space-between;gap:15px;font-size:13px;margin:19px 0 8px}.progressTrack{height:11px;border-radius:99px;background:#e2eaf2;overflow:hidden}.progressFill{height:100%;background:#209366;border-radius:99px;transition:width .2s}
+.filters{display:grid;grid-template-columns:auto minmax(120px,1fr) auto minmax(135px,190px);gap:9px;align-items:center;margin-top:20px}
+.filters label{font-size:12px;font-weight:700;color:#496579}.filters input,.filters select{padding:10px 11px;width:100%;min-width:0;box-sizing:border-box;background:#fff;border:1px solid #ccd7e2;color:#183954;border-radius:8px;font:inherit;font-size:13px}
+.list{margin-top:12px;display:flex;flex-direction:column;gap:7px;max-height:260px;overflow:auto}.item{cursor:pointer;text-align:left;background:#fff;border:1px solid #e0e8f0;border-radius:9px;padding:11px;display:flex;justify-content:space-between;gap:12px;color:#21455f}.item:hover{border-color:#8aafda}.selectedItem{border-color:#1769d2;background:#f1f7ff}.itemTitle{font-size:13px;font-weight:650}.itemMeta{font-size:12px;color:#627d98;display:flex;gap:10px;flex-wrap:wrap;flex-shrink:0}.empty{color:#627d98;font-size:13px}.disclaimer{margin-top:12px;line-height:1.5}
+@media(max-width:900px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.filters{grid-template-columns:1fr 1fr}.filters label{grid-column:span 1}.filters input,.filters select{grid-column:span 1}.item{flex-direction:column}.itemMeta{flex-shrink:1}}
+@media(max-width:480px){.dashboard{padding:13px}.filters{display:flex;flex-direction:column;align-items:stretch}.item{gap:6px}}

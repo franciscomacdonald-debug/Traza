@@ -440,9 +440,14 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
           </div>
 
           <div className={styles.userBox}>
-            <button className={styles.bell} title="Alertas no leídas">
-              🔔{unreadAlertCount > 0 ? ` ${unreadAlertCount}` : ""}
-            </button>
+           <button
+  type="button"
+  className={styles.bell}
+  title="Abrir centro de notificaciones"
+  onClick={() => setActive("Obligaciones")}
+>
+  🔔{unreadAlertCount > 0 ? ` ${unreadAlertCount}` : ""}
+</button>
             <div>
               <strong>{userLabel}</strong>
               <span>{workLabel}</span>

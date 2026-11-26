@@ -59,3 +59,20 @@
 .responseForm label { font-weight: 700; font-size: 12px; }
 .responseForm textarea, .responseForm select { box-sizing: border-box; width: 100%; background: white; color: #102a43; border: 1px solid #ccd7e2; border-radius: 8px; padding: 10px; font: inherit; }
 .responseForm small { color: #627d98; }
+
+/* Paso 279: evaluación formal de cumplimiento */
+.evaluationSection { margin-top: 24px; padding: 18px; background: #f8fafc; border: 1px solid #d9e4ed; border-radius: 12px; }
+.evaluationHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.evaluationHeading h4 { margin: 0 0 8px; }
+.evaluateButton { cursor: pointer; padding: 10px 14px; border: 1px solid #1769d2; border-radius: 9px; background: #1769d2; color: #fff; font-weight: 700; }
+.evaluateButton:disabled { opacity: .55; cursor: not-allowed; }
+.evaluationForm { display: flex; flex-direction: column; gap: 9px; margin: 14px 0; padding: 14px; background: #fff; border: 1px solid #dce5ef; border-radius: 10px; }
+.evaluationForm label { color: #486581; font-size: 13px; font-weight: 700; }
+.evaluationForm select, .evaluationForm textarea { box-sizing: border-box; width: 100%; padding: 10px; font: inherit; border: 1px solid #ccd7e2; border-radius: 8px; color: #102a43; background: white; }
+.evaluationForm small { color: #627d98; }
+.evaluationSection h5 { font-size: 14px; margin: 18px 0 10px; }
+.evaluationHistory { display: flex; flex-direction: column; gap: 10px; }
+.evaluationEntry { padding: 12px; background: #fff; border: 1px solid #e0e8f0; border-radius: 9px; display: flex; flex-direction: column; gap: 5px; overflow-wrap: anywhere; }
+.evaluationEntry strong { color: #21455f; }
+.evaluationEntry span { color: #627d98; font-size: 12px; }
+.evaluationEntry p { margin: 3px 0; font-size: 13px; white-space: pre-wrap; }

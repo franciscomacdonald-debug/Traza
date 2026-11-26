@@ -11,6 +11,7 @@ type Source = { id: string; title: string; reference_code: string | null; source
 type Link = { id: string; obligation_id: string; source_id: string; notes: string | null };
 type Evidence = { id: string; obligation_id: string; file_path: string | null; description: string | null; uploaded_by: string | null; created_at: string };
 type EvidenceReview = { id: string; evidence_id: string; decision: "approved" | "observed"; comments: string | null; reviewed_by: string; reviewed_at: string };
+type ObligationEvaluation = { id: string; obligation_id: string; evaluation_result: "in_progress" | "completed" | "not_accredited"; justification: string; evaluated_by: string; evaluated_at: string };
 type EvidenceResponse = { id: string; review_id: string; new_evidence_id: string | null; response_text: string; responded_by: string; responded_at: string };
 type Version = { id: string; source_id: string; version_label: string; status: string; file_path: string | null; external_reference: string | null };
 const BUCKET = "traza-documents";
@@ -24,6 +25,11 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
   const [evidences, setEvidences] = useState<Evidence[]>([]);
   const [reviews, setReviews] = useState<EvidenceReview[]>([]);
   const [responses, setResponses] = useState<EvidenceResponse[]>([]);
+  const [evaluations, setEvaluations] = useState<ObligationEvaluation[]>([]);
+  const [evaluationOpen, setEvaluationOpen] = useState(false);
+  const [evaluationResult, setEvaluationResult] = useState<"in_progress" | "completed" | "not_accredited">("in_progress");
+  const [evaluationJustification, setEvaluationJustification] = useState("");
+  const [evaluationSaving, setEvaluationSaving] = useState(false);
   const [responseReviewId, setResponseReviewId] = useState<string | null>(null);
   const [responseText, setResponseText] = useState("");
   const [responseEvidenceId, setResponseEvidenceId] = useState("");
@@ -65,6 +71,12 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
     setLinks((joined.data ?? []) as Link[]);
     setSelected(previous => obligationRows.some(o => o.id === previous) ? previous : obligationRows[0]?.id ?? "");
     if (obligationRows.length) {
+      const evaluationQuery = await supabase.from("environmental_obligation_evaluations")
+        .select("id,obligation_id,evaluation_result,justification,evaluated_by,evaluated_at")
+        .in("obligation_id", obligationRows.map(o => o.id))
+        .order("evaluated_at", { ascending: false });
+      if (evaluationQuery.error) setError(evaluationQuery.error.message);
+      setEvaluations((evaluationQuery.data ?? []) as ObligationEvaluation[]);
       const res = await supabase.from("obligation_evidence")
         .select("id,obligation_id,file_path,description,uploaded_by,created_at")
         .in("obligation_id", obligationRows.map(o => o.id))
@@ -89,7 +101,7 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
           setResponses((responseResult.data ?? []) as EvidenceResponse[]);
         } else setResponses([]);
       } else { setReviews([]); setResponses([]); }
-    } else { setEvidences([]); setReviews([]); setResponses([]); }
+    } else { setEvidences([]); setReviews([]); setResponses([]); setEvaluations([]); }
     if (sourceRows.length) {
       const revisionResult = await supabase.from("environmental_source_versions")
         .select("id,source_id,version_label,status,file_path,external_reference")
@@ -101,7 +113,7 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
   }, [projectId]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { setSourceToAdd(""); }, [selected]);
+  useEffect(() => { setSourceToAdd(""); setEvaluationOpen(false); setEvaluationJustification(""); }, [selected]);
 
   async function addLink() {
     if (!supabase || !canEdit || !selected || !sourceToAdd || saving) return;
@@ -229,6 +241,27 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
     } finally { setResponseSaving(false); }
   }
 
+  async function submitEvaluation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !canReview || !selected || evaluationSaving || !evaluationJustification.trim()) return;
+    setEvaluationSaving(true); setError(""); setMessage("");
+    try {
+      const { error: evaluationError } = await supabase.rpc("evaluate_environmental_obligation", {
+        p_obligation_id: selected,
+        p_result: evaluationResult,
+        p_justification: evaluationJustification.trim()
+      });
+      if (evaluationError) throw new Error(evaluationError.message);
+      setEvaluationOpen(false);
+      setEvaluationJustification("");
+      setEvaluationResult("in_progress");
+      await load();
+      setMessage("Evaluación formal registrada correctamente. Se conserva el historial.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo registrar la evaluación.");
+    } finally { setEvaluationSaving(false); }
+  }
+
   const linked = links.filter(l => l.obligation_id === selected);
   const eligible = sources.filter(s => !linked.some(l => l.source_id === s.id));
 
@@ -255,6 +288,50 @@ export default function ObligationDocuments({ projectId, accessLevel }: { projec
             {canEdit && <button type="button" className={styles.danger} disabled={saving} onClick={() => void removeLink(link)}>Desvincular</button>}
           </div></div>;
         })}
+        <section className={styles.evaluationSection} aria-label="Evaluación formal de cumplimiento">
+          <div className={styles.evaluationHeading}>
+            <div>
+              <h4>Evaluación formal de cumplimiento</h4>
+              <p className={styles.muted}>Una evidencia aprobada no acredita automáticamente toda la obligación. La asesoría debe registrar una evaluación fundamentada.</p>
+            </div>
+            {canReview && chosen.status !== "cancelled" && chosen.status !== "not_applicable" &&
+              <button type="button" className={styles.evaluateButton} disabled={evaluationSaving}
+                onClick={() => { setEvaluationOpen(!evaluationOpen); setEvaluationJustification(""); setEvaluationResult("in_progress"); setError(""); }}>
+                {evaluationOpen ? "Cerrar evaluación" : "Evaluar cumplimiento"}
+              </button>}
+          </div>
+          {canReview && evaluationOpen && <form className={styles.evaluationForm} onSubmit={event => void submitEvaluation(event)}>
+            <label htmlFor="traza-evaluation-result">Resultado de la evaluación</label>
+            <select id="traza-evaluation-result" value={evaluationResult} disabled={evaluationSaving}
+              onChange={event => setEvaluationResult(event.target.value as "in_progress" | "completed" | "not_accredited")}>
+              <option value="in_progress">En proceso</option>
+              <option value="completed">Cumplida</option>
+              <option value="not_accredited">No acreditada</option>
+            </select>
+            <label htmlFor="traza-evaluation-justification">Justificación de la asesoría (obligatoria)</label>
+            <textarea id="traza-evaluation-justification" rows={4} required maxLength={4000}
+              placeholder="Fundamenta el resultado e indica las evidencias revisadas"
+              value={evaluationJustification} disabled={evaluationSaving}
+              onChange={event => setEvaluationJustification(event.target.value)} />
+            <small>Para declarar «Cumplida», Supabase exige al menos una evidencia cuya última revisión esté aprobada. Debes verificar todos los respaldos necesarios.</small>
+            <div className={styles.reviewButtons}>
+              <button type="submit" disabled={evaluationSaving || !evaluationJustification.trim()}>
+                {evaluationSaving ? "Registrando…" : "Registrar evaluación"}
+              </button>
+              <button type="button" disabled={evaluationSaving} onClick={() => setEvaluationOpen(false)}>Cancelar</button>
+            </div>
+          </form>}
+          <h5>Historial de evaluaciones</h5>
+          {evaluations.filter(e => e.obligation_id === selected).length === 0
+            ? <p className={styles.muted}>Todavía no se han registrado evaluaciones formales.</p>
+            : <div className={styles.evaluationHistory}>
+                {evaluations.filter(e => e.obligation_id === selected).map(e => <div key={e.id} className={styles.evaluationEntry}>
+                  <strong>{e.evaluation_result === "completed" ? "Cumplida" : e.evaluation_result === "in_progress" ? "En proceso" : "No acreditada"}</strong>
+                  <span>{new Date(e.evaluated_at).toLocaleString("es-CL")} · Evaluador: {e.evaluated_by}</span>
+                  <p>{e.justification}</p>
+                </div>)}
+              </div>}
+        </section>
         <section className={styles.evidences} aria-label="Evidencias de cumplimiento">
           <h4>Evidencias de cumplimiento</h4>
           <p className={styles.muted}>Fotografías y certificados asociados a esta obligación. Cargar una evidencia no marca la obligación como cumplida ni supone su aprobación.</p>

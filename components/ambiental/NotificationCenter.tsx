@@ -79,6 +79,32 @@ export default function NotificationCenter({ projectId, onSelectObligation }: {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  // El encabezado de TRAZA solicita abrir este panel al pulsar su campana.
+  // También comprobamos el hash por si el componente se montó después del clic.
+  useEffect(() => {
+    const openFromHeader = () => {
+      setExpanded(true);
+      setOnlyUnread(false);
+      window.requestAnimationFrame(() => {
+        document.getElementById("traza-notification-center")?.scrollIntoView({
+          behavior: "smooth", block: "start"
+        });
+      });
+    };
+
+    const openFromHash = () => {
+      if (window.location.hash === "#traza-notificaciones") openFromHeader();
+    };
+
+    window.addEventListener("traza:open-notifications", openFromHeader);
+    window.addEventListener("hashchange", openFromHash);
+    openFromHash();
+    return () => {
+      window.removeEventListener("traza:open-notifications", openFromHeader);
+      window.removeEventListener("hashchange", openFromHash);
+    };
+  }, []);
+
   const readSet = useMemo(() => new Set(readIds), [readIds]);
   const unreadCount = alerts.filter(a => !readSet.has(a.id)).length;
   const displayed = onlyUnread ? alerts.filter(a => !readSet.has(a.id)) : alerts;
@@ -96,7 +122,7 @@ export default function NotificationCenter({ projectId, onSelectObligation }: {
     } finally { setMarkingId(null); }
   }
 
-  return <section className={styles.center} aria-label="Centro de notificaciones ambientales">
+  return <section id="traza-notification-center" className={styles.center} aria-label="Centro de notificaciones ambientales">
     <div className={styles.toolbar}>
       <button type="button" className={styles.bell} onClick={() => setExpanded(v => !v)} aria-expanded={expanded} aria-controls="traza-notification-list">
         <span aria-hidden="true">🔔</span> Notificaciones {unreadCount > 0 && <span className={styles.count}>{unreadCount} sin leer</span>}

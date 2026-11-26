@@ -251,7 +251,8 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
 
   // Contador individual: solo alertas ambientales activas NO leídas por este usuario.
   useEffect(() => {
-    if (!supabase || !selectedProjectId || !user?.id) {
+    const userId = user?.id;
+    if (!supabase || !selectedProjectId || !userId) {
       setUnreadAlertCount(0);
       setCriticalAlertCount(0);
       return;
@@ -284,7 +285,7 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
       const { data: readRows, error: readError } = await client
         .from("project_alert_user_reads")
         .select("alert_id")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .in("alert_id", visible.map((a) => a.id));
 
       if (cancelled) return;

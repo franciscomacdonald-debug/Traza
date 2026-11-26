@@ -444,7 +444,12 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
   type="button"
   className={styles.bell}
   title="Abrir centro de notificaciones"
-  onClick={() => setActive("Obligaciones")}
+  onClick={() => {
+    setActive("Obligaciones");
+    // El hash sirve también cuando el componente aún no se ha montado.
+    window.location.hash = "traza-notificaciones";
+    window.dispatchEvent(new Event("traza:open-notifications"));
+  }}
 >
   🔔{unreadAlertCount > 0 ? ` ${unreadAlertCount}` : ""}
 </button>

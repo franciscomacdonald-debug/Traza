@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { AccessLevel } from "@/lib/modules";
 import styles from "./EnvironmentalInspections.module.css";
+import InspectionPhotos from "./InspectionPhotos";
 
 type InspectionStatus = "draft" | "in_progress" | "completed" | "cancelled";
 type Inspection = {
@@ -30,6 +31,7 @@ export default function EnvironmentalInspections({ projectId, accessLevel }: { p
   const [rows, setRows] = useState<Inspection[]>([]);
   const [userId, setUserId] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [photosForId, setPhotosForId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(todayLocal);
   const [generalNotes, setGeneralNotes] = useState("");
@@ -178,7 +180,7 @@ export default function EnvironmentalInspections({ projectId, accessLevel }: { p
               <thead><tr><th>Fecha</th><th>Inspección</th><th>Estado</th><th>Observaciones</th><th>Acciones</th></tr></thead>
               <tbody>{rows.map((item) => {
                 const ownEditable = canEdit && item.inspector_user_id === userId;
-                return <tr key={item.id}>
+                return <Fragment key={item.id}><tr>
                   <td>{item.inspection_date}</td>
                   <td>{item.title || "Sin título"}</td>
                   <td>{statusNames[item.status] ?? item.status}</td>
@@ -190,9 +192,11 @@ export default function EnvironmentalInspections({ projectId, accessLevel }: { p
                       <button type="button" className={styles.button} onClick={() => void changeStatus(item, "in_progress")} disabled={saving}>Iniciar</button>}
                     {ownEditable && item.status === "in_progress" &&
                       <button type="button" className={styles.button} onClick={() => void changeStatus(item, "completed")} disabled={saving}>Completar</button>}
-                    {(!ownEditable || item.status === "completed" || item.status === "cancelled") && <span className={styles.info}>—</span>}
+                    <button type="button" className={`${styles.button} ${styles.secondary}`} onClick={() => setPhotosForId((current) => current === item.id ? null : item.id)}>{photosForId === item.id ? "Cerrar fotos" : "Fotografías"}</button>
                   </div></td>
-                </tr>;
+                  </tr>
+                  {photosForId === item.id && <tr><td colSpan={5}><InspectionPhotos key={item.id} projectId={projectId} inspectionId={item.id} inspectorUserId={item.inspector_user_id} inspectionStatus={item.status} accessLevel={accessLevel} /></td></tr>}
+                </Fragment>;
               })}</tbody>
             </table>
           </div>}

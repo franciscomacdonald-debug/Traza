@@ -12,6 +12,7 @@ import ObligationDocuments from "@/components/ambiental/ObligationDocuments";
 import EnvironmentalOverview from "@/components/ambiental/EnvironmentalOverview";
 import EnvironmentalInspections from "@/components/ambiental/EnvironmentalInspections";
 import EnvironmentalFindings from "@/components/ambiental/EnvironmentalFindings";
+import EnvironmentalInspectionReports from "@/components/ambiental/EnvironmentalInspectionReports";
 
 type Profile = {
   id: string;
@@ -552,6 +553,8 @@ function EnvironmentalDashboard({ authorizedProjectId, accessLevel }: { authoriz
           <EnvironmentalInspections projectId={authorizedProjectId} accessLevel={accessLevel} />
         ) : active === "Hallazgos" ? (
           <EnvironmentalFindings projectId={authorizedProjectId} accessLevel={accessLevel} />
+        ) : active === "Informes" ? (
+          <EnvironmentalInspectionReports projectId={authorizedProjectId} projectName={selectedProject.name} accessLevel={accessLevel} />
         ) : (<>
 
         <EnvironmentalOverview

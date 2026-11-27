@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { AccessLevel } from "@/lib/modules";
 import styles from "./SavedReportDetail.module.css";
+import SavedReportPrint from "./SavedReportPrint";
 
 type SnapshotFinding = { id?: string; title?: string; description?: string; status?: string; closure_notes?: string | null };
 type SnapshotPhoto = { id?: string; description?: string | null; original_file_path?: string };
@@ -87,6 +88,7 @@ export default function SavedReportDetail({ reportId, projectId, accessLevel, on
     {message && <p className={styles.success} role="status">{message}</p>}
     {report && <>
       <p className={styles.note}>Esta vista utiliza el contenido guardado del informe; no se actualiza automáticamente con cambios posteriores de la inspección.</p>
+      <SavedReportPrint projectId={projectId} reportId={report.id} />
       <div className={styles.grid}>
         <div className={styles.field}><small>Estado</small><strong>{report.status}</strong></div>
         <div className={styles.field}><small>Registrado</small><strong>{date(report.created_at)}</strong></div>

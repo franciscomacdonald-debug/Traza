@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { AccessLevel } from "@/lib/modules";
 import styles from "./ReportLifecycle.module.css";
+import SavedReportDetail from "./SavedReportDetail";
 
 type Report = {
   id: string;
@@ -30,6 +31,7 @@ export default function ReportLifecycle({ projectId, accessLevel, reloadToken = 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   // Estos controles son orientativos. Los RPC comprueban el rol AIF y el permiso modular real.
   const canEdit = ["admin", "approve", "edit"].includes(accessLevel);
   const canApprove = ["admin", "approve"].includes(accessLevel);
@@ -79,12 +81,14 @@ export default function ReportLifecycle({ projectId, accessLevel, reloadToken = 
         </div><span className={styles.status}>{statusLabels[r.status] || r.status}</span>
       </div>
       <div className={styles.actions}>
+        <button type="button" disabled={!!busyId} onClick={() => setSelectedReportId((v) => v === r.id ? null : r.id)}>{selectedReportId === r.id ? "Ocultar informe guardado" : "Ver / editar informe guardado"}</button>
         {canEdit && ["draft", "generated"].includes(r.status) && <button type="button" disabled={!!busyId} onClick={() => void transition(r,"review")}>Enviar a revisión</button>}
         {canApprove && r.status === "under_review" && <button type="button" disabled={!!busyId} onClick={() => void transition(r,"approve")}>Aprobar informe</button>}
         {canEdit && r.status === "issued" && <button type="button" disabled={!!busyId} onClick={() => void transition(r,"revision")}>Crear nueva revisión</button>}
         {r.status === "approved" && <small>Pendiente de PDF oficial verificable en Storage para su emisión.</small>}
       </div>
+      {selectedReportId === r.id && <SavedReportDetail key={r.id} reportId={r.id} projectId={projectId} accessLevel={accessLevel} onClose={() => setSelectedReportId(null)} onSaved={() => void load()} />}
     </article>)}
-    <p className={styles.disclaimer}>La vista preliminar superior se genera desde la inspección seleccionada y no edita automáticamente un informe guardado. La aprobación de un borrador conserva el contenido registrado en su snapshot.</p>
+    <p className={styles.disclaimer}>La vista preliminar superior consulta datos actuales de la inspección. «Ver / editar informe guardado» muestra la copia registrada; solo sus campos de resumen y conclusiones pueden editarse cuando está en borrador. La emisión oficial del PDF permanece pendiente.</p>
   </section>;
 }

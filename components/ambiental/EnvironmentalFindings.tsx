@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { AccessLevel } from "@/lib/modules";
 import FindingFollowUp from "./FindingFollowUp";
+import FindingPhotoComparison from "./FindingPhotoComparison";
 import styles from "./EnvironmentalFindings.module.css";
 
 type Finding = {
@@ -41,6 +42,7 @@ export default function EnvironmentalFindings({ projectId, accessLevel }: { proj
   const [error, setError] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [photoId, setPhotoId] = useState<string | null>(null);
+  const [compareId, setCompareId] = useState<string | null>(null);
   const [photos, setPhotos] = useState<LinkedPhoto[]>([]);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState("");
@@ -61,6 +63,7 @@ export default function EnvironmentalFindings({ projectId, accessLevel }: { proj
     setFindings([]);
     setOpenId(null);
     setPhotoId(null);
+    setCompareId(null);
     setPhotos([]);
     void refresh();
   }, [projectId, refresh]);
@@ -138,6 +141,7 @@ export default function EnvironmentalFindings({ projectId, accessLevel }: { proj
       <div className={styles.actions}>
         <button type="button" className={styles.button} onClick={() => setOpenId(x => x === f.id ? null : f.id)}>{openId === f.id ? "Ocultar seguimiento" : "Seguimiento y cierre"}</button>
         <button type="button" className={styles.button} onClick={() => void togglePhotos(f)}>{photoId === f.id ? "Ocultar fotografías" : "Ver fotografías"}</button>
+        <button type="button" className={styles.button} onClick={() => setCompareId(id => id === f.id ? null : f.id)}>{compareId === f.id ? "Ocultar comparación" : "Antes / Después"}</button>
       </div>
       {photoId === f.id && <div>
         <strong>Fotografías asociadas al hallazgo</strong>
@@ -148,6 +152,7 @@ export default function EnvironmentalFindings({ projectId, accessLevel }: { proj
           {p.description && <small>{p.description}</small>}
         </div>)}</div>
       </div>}
+      {compareId === f.id && <FindingPhotoComparison key={f.id} findingId={f.id} projectId={projectId} accessLevel={accessLevel} />}
       {openId === f.id && <FindingFollowUp findingId={f.id} projectId={projectId} accessLevel={accessLevel} onUpdated={() => void refresh()} />}
     </article>)}</div>
   </section>;

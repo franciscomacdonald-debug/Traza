@@ -4,11 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { AccessLevel } from "@/lib/modules";
 import styles from "./EnvironmentalInspectionReports.module.css";
+import ReportLifecycle from "./ReportLifecycle";
 
 type Inspection = { id: string; title: string | null; inspection_date: string; status: string; general_notes: string | null; weather_notes: string | null; inspector_user_id: string };
 type Finding = { id: string; title: string; description: string; classification: string; status: string; corrective_action_requested: string | null; due_date: string | null; closure_notes: string | null };
 type Photo = { id: string; description: string | null; original_file_path: string; captured_at: string; url?: string };
-type SavedReport = { id: string; title: string; created_at: string; status: string; version_number: number };
 const fmt = (value?: string | null) => value ? new Date(value.length === 10 ? `${value}T12:00:00` : value).toLocaleDateString("es-CL") : "—";
 const labels: Record<string, string> = { draft: "Borrador", in_progress: "En progreso", completed: "Completada", pending: "Pendiente", closed: "Cerrado", in_management: "En gestión", responded: "Respondido", closure_requested: "Cierre solicitado", overdue: "Vencido" };
 
@@ -17,7 +17,7 @@ export default function EnvironmentalInspectionReports({ projectId, projectName,
   const [selectedId, setSelectedId] = useState("");
   const [findings, setFindings] = useState<Finding[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
-  const [saved, setSaved] = useState<SavedReport[]>([]);
+  const [reportRefresh, setReportRefresh] = useState(0);
   const [summary, setSummary] = useState("");
   const [conclusions, setConclusions] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,7 +37,7 @@ export default function EnvironmentalInspectionReports({ projectId, projectName,
     if (i.error || r.error) setError(i.error?.message || r.error?.message || "No fue posible consultar los informes.");
     else {
       const items = (i.data ?? []) as Inspection[];
-      setInspections(items); setSaved((r.data ?? []) as SavedReport[]);
+      setInspections(items); setReportRefresh((v) => v + 1);
       setSelectedId((v) => items.some((x) => x.id === v) ? v : (items[0]?.id ?? ""));
     }
     setLoading(false);
@@ -143,8 +143,6 @@ export default function EnvironmentalInspectionReports({ projectId, projectName,
       <h3>6. Conclusiones</h3><p>{conclusions || "Pendiente de completar."}</p>
       <p className={styles.foot}>Generado como vista preliminar desde TRAZA. Requiere revisión y aprobación formal antes de su emisión.</p>
     </article>}
-    <section className={styles.saved}><h3>Borradores e informes registrados</h3>
-      {saved.length ? saved.map((report) => <div key={report.id} className={styles.savedrow}><span><strong>{report.title}</strong><small>{fmt(report.created_at)} · {report.status} · v{report.version_number}</small></span></div>) : <p>Sin informes de inspección registrados.</p>}
-    </section>
+    <ReportLifecycle projectId={projectId} accessLevel={accessLevel} reloadToken={reportRefresh} />
   </div>;
 }

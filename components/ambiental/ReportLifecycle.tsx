@@ -5,6 +5,9 @@ import { supabase } from "@/lib/supabase";
 import type { AccessLevel } from "@/lib/modules";
 import styles from "./ReportLifecycle.module.css";
 import SavedReportDetail from "./SavedReportDetail";
+import ReportIssuance from "./ReportIssuance";
+import AutoReportPdf from "./AutoReportPdf";
+import ReportPdfDownload from "./ReportPdfDownload";
 
 type Report = {
   id: string;
@@ -16,6 +19,7 @@ type Report = {
   report_number: string | null;
   approved_at: string | null;
   issued_at: string | null;
+  file_path: string | null;
 };
 
 const statusLabels: Record<string, string> = {
@@ -40,7 +44,7 @@ export default function ReportLifecycle({ projectId, accessLevel, reloadToken = 
     if (!supabase || !projectId) { setReports([]); return; }
     setLoading(true);
     const { data, error: queryError } = await supabase.from("environmental_reports")
-      .select("id,title,created_at,status,version_number,previous_report_id,report_number,approved_at,issued_at")
+      .select("id,title,created_at,status,version_number,previous_report_id,report_number,approved_at,issued_at,file_path")
       .eq("project_id", projectId).eq("report_type", "inspection")
       .order("created_at", { ascending: false }).limit(100);
     if (queryError) setError(queryError.message);
@@ -66,7 +70,7 @@ export default function ReportLifecycle({ projectId, accessLevel, reloadToken = 
   }
 
   return <section className={styles.panel} aria-label="Gestión formal de informes">
-    <div className={styles.header}><div><h3>Informes registrados y versiones</h3><p>Las acciones oficiales se ejecutan en Supabase y quedan auditadas. La emisión del PDF permanece deshabilitada hasta verificar su almacenamiento.</p></div>
+    <div className={styles.header}><div><h3>Informes registrados y versiones</h3><p>Las acciones oficiales se ejecutan en Supabase y quedan auditadas. La emisión requiere un PDF real en Storage y aprobación previa.</p></div>
       <button type="button" onClick={() => void load()} disabled={loading || !!busyId}>Actualizar lista</button></div>
     {error && <p className={styles.error} role="alert">{error}</p>}
     {message && <p className={styles.success} role="status">{message}</p>}
@@ -85,10 +89,12 @@ export default function ReportLifecycle({ projectId, accessLevel, reloadToken = 
         {canEdit && ["draft", "generated"].includes(r.status) && <button type="button" disabled={!!busyId} onClick={() => void transition(r,"review")}>Enviar a revisión</button>}
         {canApprove && r.status === "under_review" && <button type="button" disabled={!!busyId} onClick={() => void transition(r,"approve")}>Aprobar informe</button>}
         {canEdit && r.status === "issued" && <button type="button" disabled={!!busyId} onClick={() => void transition(r,"revision")}>Crear nueva revisión</button>}
-        {r.status === "approved" && <small>Pendiente de PDF oficial verificable en Storage para su emisión.</small>}
+        {r.status === "approved" && !canApprove && <small>Esperando emisión por un usuario autorizado.</small>}
+        {["issued", "superseded"].includes(r.status) && r.file_path && <ReportPdfDownload projectId={projectId} reportId={r.id} filePath={r.file_path} reportNumber={r.report_number} versionNumber={r.version_number} />}
       </div>
+      {canApprove && r.status === "approved" && <><AutoReportPdf projectId={projectId} reportId={r.id} onIssued={() => void load()} /><ReportIssuance projectId={projectId} reportId={r.id} onIssued={() => void load()} /></>}
       {selectedReportId === r.id && <SavedReportDetail key={r.id} reportId={r.id} projectId={projectId} accessLevel={accessLevel} onClose={() => setSelectedReportId(null)} onSaved={() => void load()} />}
     </article>)}
-    <p className={styles.disclaimer}>La vista preliminar superior consulta datos actuales de la inspección. «Ver / editar informe guardado» muestra la copia registrada; solo sus campos de resumen y conclusiones pueden editarse cuando está en borrador. La emisión oficial del PDF permanece pendiente.</p>
+    <p className={styles.disclaimer}>La vista preliminar superior consulta datos actuales de la inspección. «Ver / editar informe guardado» muestra la copia registrada; solo sus campos de resumen y conclusiones pueden editarse cuando está en borrador. La emisión oficial exige adjuntar y verificar el PDF de la versión aprobada.</p>
   </section>;
 }

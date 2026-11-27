@@ -1,0 +1,6 @@
+.wrap{border:1px solid #cbddea;border-radius:12px;background:#f7fbfd;padding:16px;margin:14px 0;display:grid;gap:10px}
+.wrap h4{font-size:15px;color:#17486c;margin:0}
+.wrap p{font-size:13px;color:#486581;margin:0;line-height:1.5}
+.wrap button{background:#17618b;color:white;border:0;border-radius:8px;padding:10px 14px;cursor:pointer;justify-self:start;font-weight:700}
+.wrap button:disabled{opacity:.55;cursor:not-allowed}
+.wrap .error{color:#a42b2b}.wrap .success{color:#19613a}
